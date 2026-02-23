@@ -33,9 +33,11 @@ services:
       - .:/app
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - bot-factory-net
+    ports:
+      - "8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -45,7 +47,7 @@ services:
   localstack:
     image: localstack/localstack:latest
     environment:
-      - SERVICES=dynamodb
+      - SERVICES=dynamodb,s3
       - DEBUG=0
       - LS_LOG=warn
       - DATA_DIR=/var/lib/localstack
@@ -72,6 +74,28 @@ services:
     networks:
       - bot-factory-net
     entrypoint: ["/scripts/init-dynamodb.sh"]
+
+  init-s3:
+    image: amazon/aws-cli
+    depends_on:
+      - localstack
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    networks:
+      - bot-factory-net
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "Waiting for LocalStack S3..."
+        until aws --endpoint-url=http://localstack:4566 s3 ls 2>/dev/null; do
+          sleep 2
+        done
+        echo "Creating bot-factory-data bucket..."
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://bot-factory-data 2>/dev/null || true
+        echo "S3 bucket ready."
 
 networks:
   bot-factory-net:

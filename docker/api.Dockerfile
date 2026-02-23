@@ -13,9 +13,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
-COPY requirements.txt .
+COPY api/requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY . .
+COPY api/ ./api/
+COPY core/ ./core/
+COPY bots/ ./bots/
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
