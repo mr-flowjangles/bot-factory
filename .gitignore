@@ -40,3 +40,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Keep the folder, ignore everything inside it
+bots/guitar/data/*
+# ...but allow a placeholder file so the directory is kept in git
+!bots/guitar/data/.gitkeep
