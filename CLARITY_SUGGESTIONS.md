@@ -4,21 +4,15 @@ This is a focused set of documentation/structure improvements that would make on
 
 ## 1) Consolidate docs and define a canonical entry point
 
-- The repo currently has overlapping docs (`README.md` and `factory/README.md`) with similar sections but divergent details.
-- Suggestion: choose one canonical “start here” doc (likely root `README.md`) and make the other a short pointer.
-- Benefit: reduces drift and contradictory instructions.
+Done
 
 ## 2) Normalize paths and command examples
 
-- Several examples use `ai/factory/...` paths, but the current repo root already contains `factory/`, `api/`, and `scripts/`.
-- Suggestion: normalize all docs to repo-relative paths from `/workspace/bot-factory` and include one “run from repo root” note near the top.
-- Benefit: fewer copy/paste errors for new contributors.
+Done
 
 ## 3) Add an explicit “local vs production” command matrix
 
-- Deployment and data workflows are clear but spread across long sections.
-- Suggestion: add one table with columns: `Task`, `Local command`, `Production command`, `Notes`.
-- Benefit: makes environment context obvious and reduces accidental prod/local mixups.
+done
 
 ## 4) Add a short architecture map with ownership boundaries
 
