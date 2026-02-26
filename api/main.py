@@ -14,12 +14,12 @@ Meta endpoints:
   GET  /health
   GET  /bots
 """
+
 import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from factory.core.router import create_bot_router
-
 
 # ---------------------------------------------------------------------------
 # App
@@ -37,7 +37,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv('CORS_ORIGINS', '*').split(','),
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,18 +48,19 @@ app.add_middleware(
 # Bot auto-discovery
 # ---------------------------------------------------------------------------
 
+
 def discover_bots() -> list[str]:
-    bots_path = Path(__file__).parent.parent / 'factory' / 'bots'
+    bots_path = Path(__file__).parent.parent / "factory" / "bots"
 
     if not bots_path.exists():
         print(f"Warning: bots directory not found at {bots_path}")
         return []
 
-    EXCLUDED = {'TEMPLATE', 'testbot'}  # add any non-production bots here
+    EXCLUDED = {"TEMPLATE", "testbot"}  # add any non-production bots here
 
     bots = []
     for path in sorted(bots_path.iterdir()):
-        if path.is_dir() and (path / 'config.yml').exists() and path.name not in EXCLUDED:
+        if path.is_dir() and (path / "config.yml").exists() and path.name not in EXCLUDED:
             bots.append(path.name)
 
     return bots
@@ -76,6 +77,7 @@ def mount_bots(bot_ids: list[str]):
 # ---------------------------------------------------------------------------
 # Meta endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 async def health():
@@ -99,6 +101,7 @@ mount_bots(_bot_ids)
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
+
 
 @app.on_event("startup")
 async def startup():
