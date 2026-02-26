@@ -9,7 +9,7 @@ Usage:
 Or from within a parent project:
     uvicorn ai.factory.main:app --reload --port 8080
 """
-import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

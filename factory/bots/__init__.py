@@ -11,6 +11,7 @@ Embedded in another project:
 Standalone:
     uvicorn factory.main:app --reload --port 8080
 """
+
 import yaml
 from pathlib import Path
 from fastapi import APIRouter
@@ -23,7 +24,7 @@ def _discover_and_build_router() -> APIRouter:
     their routers into one parent router.
     """
     router = APIRouter()
-    bots_path = Path(__file__).parent / 'bots'
+    bots_path = Path(__file__).parent / "bots"
 
     if not bots_path.exists():
         return router
@@ -32,18 +33,18 @@ def _discover_and_build_router() -> APIRouter:
         if not bot_dir.is_dir():
             continue
 
-        config_path = bot_dir / 'config.yml'
+        config_path = bot_dir / "config.yml"
         if not config_path.exists():
             continue
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
 
-            bot_config = config.get('bot', {})
-            bot_id = bot_config.get('id', bot_dir.name)
+            bot_config = config.get("bot", {})
+            bot_id = bot_config.get("id", bot_dir.name)
 
-            if bot_config.get('enabled', False):
+            if bot_config.get("enabled", False):
                 bot_router = create_bot_router(bot_id)
                 router.include_router(bot_router)
                 print(f"  Bot Factory: {bot_id} (enabled)")

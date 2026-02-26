@@ -43,6 +43,19 @@ ps:
 	docker compose ps
 
 # ─────────────────────────────────────────────────────────────
+# Code Quality
+# ─────────────────────────────────────────────────────────────
+
+lint:
+	flake8 api/ factory/ --max-line-length=120 --exclude=__pycache__,localstack-data
+
+format:
+	black api/ factory/ --line-length 120
+
+format-check:
+	black api/ factory/ --line-length 120 --check
+
+# ─────────────────────────────────────────────────────────────
 # S3 (Local)
 # ─────────────────────────────────────────────────────────────
 s3-mb:

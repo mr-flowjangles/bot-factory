@@ -17,13 +17,13 @@ Usage:
     python -m ai.factory.core.generate_embeddings guitar
     python -m ai.factory.core.generate_embeddings guitar --force
 """
+
 import os
 import sys
 import json
 import boto3
 from decimal import Decimal
 from .chunker import load_bot_data
-
 
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
@@ -33,42 +33,40 @@ EMBEDDING_DIMENSIONS = 1024
 # Connections
 # ---------------------------------------------------------------------------
 
+
 def get_dynamodb_connection():
     """Get DynamoDB connection (works with LocalStack or AWS)."""
-    endpoint_url = os.getenv('AWS_ENDPOINT_URL', '')
+    endpoint_url = os.getenv("AWS_ENDPOINT_URL", "")
 
-    if endpoint_url == '':
-        return boto3.resource('dynamodb', region_name='us-east-1')
+    if endpoint_url == "":
+        return boto3.resource("dynamodb", region_name="us-east-1")
     else:
         return boto3.resource(
-            'dynamodb',
+            "dynamodb",
             endpoint_url=endpoint_url,
-            region_name=os.getenv('AWS_REGION', 'us-east-1'),
-            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', 'test'),
-            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', 'test')
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
         )
 
 
 def get_bedrock_client():
     """Initialize Bedrock runtime client. Always calls real AWS."""
-    return boto3.client('bedrock-runtime', region_name='us-east-1')
+    return boto3.client("bedrock-runtime", region_name="us-east-1")
 
 
 # ---------------------------------------------------------------------------
 # Embedding generation
 # ---------------------------------------------------------------------------
 
+
 def generate_embedding(client, text: str) -> list[float]:
     """Generate a single embedding vector via Bedrock Titan V2."""
     response = client.invoke_model(
         modelId=BEDROCK_MODEL_ID,
-        body=json.dumps({
-            "inputText": text,
-            "dimensions": EMBEDDING_DIMENSIONS,
-            "normalize": True
-        })
+        body=json.dumps({"inputText": text, "dimensions": EMBEDDING_DIMENSIONS, "normalize": True}),
     )
-    return json.loads(response['body'].read())['embedding']
+    return json.loads(response["body"].read())["embedding"]
 
 
 def generate_all_embeddings(client, chunks: list[dict]) -> list[dict]:
@@ -79,7 +77,7 @@ def generate_all_embeddings(client, chunks: list[dict]) -> list[dict]:
         print(f"  [{idx}/{len(chunks)}] {chunk['category']}: {chunk['id']}")
 
         try:
-            chunk['embedding'] = generate_embedding(client, chunk['text'])
+            chunk["embedding"] = generate_embedding(client, chunk["text"])
         except Exception as e:
             print(f"  Error generating embedding for '{chunk['id']}': {e}")
             sys.exit(1)
@@ -92,6 +90,7 @@ def generate_all_embeddings(client, chunks: list[dict]) -> list[dict]:
 # DynamoDB storage
 # ---------------------------------------------------------------------------
 
+
 def clear_bot_embeddings(table, bot_id: str):
     """
     Delete all existing embeddings for this bot_id.
@@ -100,13 +99,13 @@ def clear_bot_embeddings(table, bot_id: str):
     print(f"\nClearing existing embeddings for bot '{bot_id}'...")
 
     response = table.scan()
-    items = response.get('Items', [])
+    items = response.get("Items", [])
 
-    while 'LastEvaluatedKey' in response:
-        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-        items.extend(response.get('Items', []))
+    while "LastEvaluatedKey" in response:
+        response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+        items.extend(response.get("Items", []))
 
-    bot_items = [item for item in items if item.get('bot_id') == bot_id]
+    bot_items = [item for item in items if item.get("bot_id") == bot_id]
 
     if not bot_items:
         print(f"  No existing embeddings found for '{bot_id}'")
@@ -114,7 +113,7 @@ def clear_bot_embeddings(table, bot_id: str):
 
     with table.batch_writer() as batch:
         for item in bot_items:
-            batch.delete_item(Key={'id': item['id']})
+            batch.delete_item(Key={"id": item["id"]})
 
     print(f"  Deleted {len(bot_items)} existing embeddings")
 
@@ -126,12 +125,12 @@ def store_embeddings(table, chunks: list[dict]):
     with table.batch_writer() as batch:
         for chunk in chunks:
             item = {
-                'id': f"{chunk['bot_id']}_{chunk['id']}",
-                'bot_id': chunk['bot_id'],
-                'category': chunk['category'],
-                'heading': chunk['heading'],
-                'text': chunk['text'],
-                'embedding': [Decimal(str(x)) for x in chunk['embedding']],
+                "id": f"{chunk['bot_id']}_{chunk['id']}",
+                "bot_id": chunk["bot_id"],
+                "category": chunk["category"],
+                "heading": chunk["heading"],
+                "text": chunk["text"],
+                "embedding": [Decimal(str(x)) for x in chunk["embedding"]],
             }
             batch.put_item(Item=item)
 
@@ -142,21 +141,23 @@ def store_embeddings(table, chunks: list[dict]):
 # Check if embeddings exist
 # ---------------------------------------------------------------------------
 
+
 def bot_embeddings_exist(table, bot_id: str) -> bool:
     """Check if this bot already has embeddings in the table."""
     response = table.scan()
-    items = response.get('Items', [])
+    items = response.get("Items", [])
 
-    while 'LastEvaluatedKey' in response:
-        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
-        items.extend(response.get('Items', []))
+    while "LastEvaluatedKey" in response:
+        response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+        items.extend(response.get("Items", []))
 
-    return any(item.get('bot_id') == bot_id for item in items)
+    return any(item.get("bot_id") == bot_id for item in items)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def generate_bot_embeddings(bot_id: str, force: bool = False):
     """
@@ -167,20 +168,20 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
         force:  If True, regenerate even if embeddings already exist
     """
     print("\n" + "=" * 60)
-    print(f"  Bot Factory — Embedding Generator")
+    print("  Bot Factory — Embedding Generator")
     print(f"  Bot: {bot_id}")
     print(f"  Model: {BEDROCK_MODEL_ID} ({EMBEDDING_DIMENSIONS}d)")
     print("=" * 60 + "\n")
 
     # Step 1: Connect to DynamoDB
     dynamodb = get_dynamodb_connection()
-    table = dynamodb.Table('ChatbotRAG')
+    table = dynamodb.Table("ChatbotRAG")
 
     # Step 2: Check if embeddings already exist
     if bot_embeddings_exist(table, bot_id):
         if not force:
             answer = input(f"Embeddings already exist for '{bot_id}'. Regenerate? (y/n): ").strip().lower()
-            if answer != 'y':
+            if answer != "y":
                 print("  Skipping — existing embeddings unchanged.")
                 return
         print(f"  Regenerating embeddings for '{bot_id}'...")
@@ -204,10 +205,11 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 
     # Summary
     from collections import Counter
-    cats = Counter(c['category'] for c in chunks)
+
+    cats = Counter(c["category"] for c in chunks)
 
     print("\n" + "=" * 60)
-    print(f"  Embeddings generation complete!")
+    print("  Embeddings generation complete!")
     print("=" * 60)
     print(f"\n  Bot: {bot_id}")
     print(f"  Model: {BEDROCK_MODEL_ID}")
@@ -227,10 +229,10 @@ def main():
         sys.exit(1)
 
     bot_id = sys.argv[1]
-    force = '--force' in sys.argv
+    force = "--force" in sys.argv
 
     generate_bot_embeddings(bot_id, force=force)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

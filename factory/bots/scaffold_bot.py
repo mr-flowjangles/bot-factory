@@ -15,7 +15,6 @@ Run from the project root (~/myPortfolio/aws-serverless-resume/).
 """
 
 import sys
-import os
 import yaml
 from pathlib import Path
 
@@ -31,8 +30,7 @@ def load_config(bot_id: str) -> dict:
         config = yaml.safe_load(f)
 
     # Validate required fields
-    required = ["bot.id", "bot.name", "suggestions", "frontend.subtitle",
-                "frontend.welcome", "frontend.placeholder"]
+    required = ["bot.id", "bot.name", "suggestions", "frontend.subtitle", "frontend.welcome", "frontend.placeholder"]
     for field in required:
         parts = field.split(".")
         val = config
@@ -53,7 +51,7 @@ def build_nav_html(nav_items: list, bot_id: str) -> str:
         lines.append(
             f'        <a href="#{item["section"]}"{active}>\n'
             f'            <span class="nav-icon">{item["icon"]}</span> {item["label"]}\n'
-            f'        </a>'
+            f"        </a>"
         )
     return "\n".join(lines)
 
@@ -85,7 +83,7 @@ def generate_html(config: dict) -> str:
     nav_html = build_nav_html(nav_items, bot_id)
     suggestions_html = build_suggestions_html(suggestions)
 
-    return f'''<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -190,7 +188,7 @@ def generate_html(config: dict) -> str:
     <script src="bot_scripts/navigation.js"></script>
 
 </body>
-</html>'''
+</html>"""
 
 
 def scaffold(bot_id: str):
@@ -237,7 +235,7 @@ def scaffold(bot_id: str):
     print(f"   HTML:    {html_file}")
     print(f"   Scripts: {scripts_dir}/")
     print(f"   Assets:  {assets_dir}/")
-    print(f"\n   Next steps:")
+    print("\n   Next steps:")
     print(f"   1. Add a logo to {assets_dir}/logo.png")
     print(f"   2. Add bot-specific styles to {css_file}")
     print(f"   3. (Optional) Add a formatter.js in {scripts_dir}/")
