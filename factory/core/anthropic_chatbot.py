@@ -1,4 +1,9 @@
 """
+If you do not want to use Bedrock, rename this file to chatbot.py and implement 
+the same interface using the Anthropic API.
+"""
+
+"""
 Chatbot Module (Parameterized)
 
 Generates responses using Claude API with RAG context.
@@ -10,18 +15,11 @@ call Claude. Only difference: bot_id drives which prompt and
 embeddings are used.
 """
 import os
-import time
-import logging
 from datetime import datetime
 from pathlib import Path
-from pyexpat.errors import messages
 import yaml
-import boto3
-import botocore.session
-import configparser
+import anthropic
 from .retrieval import retrieve_relevant_chunks, format_context_for_llm
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Cached resources — persist across warm Lambda invocations
@@ -30,31 +28,13 @@ _anthropic_client = None
 _system_prompts = {}
 
 
-_bedrock_client = None
+def get_anthropic_client() -> anthropic.Anthropic:
+    """Lazy-init Anthropic client."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    return _anthropic_client
 
-def get_bedrock_client():
-    global _bedrock_client
-    if _bedrock_client is None:
-        t_start = time.time()
-        logger.info("[chatbot] Initializing Bedrock client...")
-        try:
-            config = configparser.ConfigParser()
-            config.read('/root/.aws/credentials')
-            _bedrock_client = boto3.client(
-                'bedrock-runtime',
-                region_name='us-east-1',
-                endpoint_url=os.getenv('BEDROCK_ENDPOINT_URL'),
-                aws_access_key_id=config.get('default', 'aws_access_key_id'),
-                aws_secret_access_key=config.get('default', 'aws_secret_access_key')
-            )
-            logger.info(f"[chatbot] Bedrock init via credentials file — {time.time() - t_start:.3f}s")
-        except Exception:
-            _bedrock_client = boto3.client(
-                'bedrock-runtime',
-                region_name='us-east-1'
-            )
-            logger.info(f"[chatbot] Bedrock init via IAM role — {time.time() - t_start:.3f}s")
-    return _bedrock_client
 
 def load_system_prompt(bot_id: str) -> str:
     """
@@ -87,10 +67,9 @@ def load_system_prompt(bot_id: str) -> str:
 def generate_response(
     bot_id: str,
     user_message: str,
-    top_k: int,
-    similarity_threshold: float,
     conversation_history: list[dict] = None,
-
+    top_k: int = 5,
+    similarity_threshold: float = 0.3
 ) -> dict:
     """
     Generate a response using RAG for a specific bot.
@@ -126,8 +105,8 @@ def generate_response(
     for msg in conversation_history:
         messages.append({
             "role": msg["role"],
-            "content": [{"text": msg["content"]}]
-    })
+            "content": msg["content"]
+        })
 
     # Add current user message with context
     user_content = f"""## Relevant Context:
@@ -140,22 +119,23 @@ Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY 
 
     messages.append({
         "role": "user",
-        "content": [{"text": user_content}]
+        "content": user_content
     })
 
     # Load this bot's system prompt
     system_prompt = load_system_prompt(bot_id)
 
     # Call Claude
-    client = get_bedrock_client()
-    response = client.converse(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
-        inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
-        messages=messages)
+    client = get_anthropic_client()
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1000,
+        system=system_prompt,
+        messages=messages
+    )
 
     return {
-        "response": response["output"]["message"]["content"][0]["text"],
+        "response": response.content[0].text,
         "sources": [
             {
                 "category": chunk["category"],
@@ -164,61 +144,3 @@ Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY 
             for chunk in relevant_chunks
         ]
     }
-
-def generate_response_stream(
-    bot_id: str,
-    user_message: str,
-    top_k: int,
-    similarity_threshold: float,
-    conversation_history: list[dict] = None,
-):
-    """
-    Same as generate_response, but yields text chunks for streaming.
-    """
-    logger.info(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'")
-
-    if conversation_history is None:
-        conversation_history = []
-
-    relevant_chunks = retrieve_relevant_chunks(
-        bot_id=bot_id,
-        query=user_message,
-        top_k=top_k,
-        similarity_threshold=similarity_threshold
-    )
-
-    context = format_context_for_llm(relevant_chunks)
-
-    messages = []
-    for msg in conversation_history:
-        messages.append({
-            "role": msg["role"],
-            "content": [{"text": msg["content"]}]
-        })
-
-    user_content = f"""## Relevant Context:
-{context}
-
-## User Question:
-{user_message}
-
-Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. If you can't answer from the context, say so politely."""
-
-    messages.append({
-        "role": "user",
-        "content": [{"text": user_content}]
-    })
-
-    system_prompt = load_system_prompt(bot_id)
-
-    client = get_bedrock_client()
-    response = client.converse_stream(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
-        inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
-        messages=messages
-    )
-
-    for event in response["stream"]:
-        if "contentBlockDelta" in event:
-            yield event["contentBlockDelta"]["delta"]["text"]

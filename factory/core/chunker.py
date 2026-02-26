@@ -10,48 +10,123 @@ Handles two format types:
 
 Supports optional 'search_terms' field to improve semantic search matching.
 
-Local usage:  load_bot_data(bot_id)          → reads from bots/{bot_id}/data/
-S3/Lambda:    chunk_yaml_content(data, bot_id) → takes a pre-parsed YAML dict
+Input:  bot_id string (resolves to s3://bot-factory-data/bots/{bot_id}/data/)
+Output: List of dicts with {id, bot_id, category, heading, text}
 """
+import os
 import yaml
-from pathlib import Path
+import boto3
+
+
+S3_BUCKET = os.getenv('BOT_DATA_BUCKET', 'bot-factory-data')
+S3_PREFIX = 'bots'
 
 
 # ---------------------------------------------------------------------------
-# Entry processing (format-agnostic, no I/O)
+# S3 connection
+# ---------------------------------------------------------------------------
+
+def get_s3_client():
+    """Get S3 client (works with LocalStack or AWS)."""
+    endpoint_url = os.getenv('AWS_ENDPOINT_URL', '')
+
+    if endpoint_url == '':
+        return boto3.client('s3', region_name='us-east-1')
+    else:
+        return boto3.client(
+            's3',
+            endpoint_url=endpoint_url,
+            region_name=os.getenv('AWS_REGION', 'us-east-1'),
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', 'test'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', 'test')
+        )
+
+
+# ---------------------------------------------------------------------------
+# S3 file loading
+# ---------------------------------------------------------------------------
+
+def load_yaml_files(bot_id: str) -> list[dict]:
+    """
+    Load all .yml files from S3 for a bot's data folder.
+    s3://bot-factory-data/bots/{bot_id}/data/*.yml
+    Returns the combined list of entries from all files.
+    """
+    s3 = get_s3_client()
+    prefix = f"{S3_PREFIX}/{bot_id}/data/"
+    all_entries = []
+
+    response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+    objects = response.get('Contents', [])
+
+    yml_keys = sorted(
+        obj['Key'] for obj in objects
+        if obj['Key'].endswith('.yml') or obj['Key'].endswith('.yaml')
+    )
+
+    if not yml_keys:
+        print(f"  Warning: no .yml files found at s3://{S3_BUCKET}/{prefix}")
+        return all_entries
+
+    for key in yml_keys:
+        filename = key.split('/')[-1]
+        print(f"  Reading s3://{S3_BUCKET}/{key}...")
+
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+        data = yaml.safe_load(obj['Body'].read().decode('utf-8'))
+
+        entries = data.get('entries', [])
+        all_entries.extend(entries)
+        print(f"    Found {len(entries)} entries")
+
+    return all_entries
+
+
+# ---------------------------------------------------------------------------
+# Chunking logic (unchanged)
 # ---------------------------------------------------------------------------
 
 def chunk_text_entry(entry: dict) -> str:
-    """'text' format: combine heading + content as-is."""
+    """
+    Process a 'text' format entry.
+    Content is already readable — combine heading + content.
+    """
     heading = entry.get('heading', '')
     content = entry.get('content', '')
+
     if heading and content:
         return f"{heading}\n\n{content}"
     return content or heading
 
 
 def chunk_structured_entry(entry: dict) -> str:
-    """'structured' format: apply template to each item, combine with heading."""
-    heading  = entry.get('heading', '')
+    """
+    Process a 'structured' format entry.
+    Apply the template to each item, then combine with heading.
+    """
+    heading = entry.get('heading', '')
     template = entry.get('template', '')
-    items    = entry.get('items', [])
+    items = entry.get('items', [])
 
     if not template or not items:
         print(f"  Warning: structured entry '{entry.get('id')}' missing template or items")
         return heading
 
     parts = [heading] if heading else []
+
     for item in items:
         try:
-            parts.append(template.format(**item))
+            text = template.format(**item)
+            parts.append(text)
         except KeyError as e:
-            print(f"  Warning: template key {e} missing in entry '{entry.get('id')}'")
+            print(f"  Warning: template placeholder {e} not found in item for entry '{entry.get('id')}'")
+            continue
 
     return '\n'.join(parts)
 
 
 def chunk_entry(entry: dict) -> str:
-    """Route an entry to the correct chunker, prepend search_terms if present."""
+    """Route an entry to the correct chunker based on its format."""
     fmt = entry.get('format', 'text')
 
     if fmt in ('text', 'string'):
@@ -69,93 +144,37 @@ def chunk_entry(entry: dict) -> str:
     return text
 
 
-def entries_to_chunks(entries: list[dict], bot_id: str) -> list[dict]:
-    """
-    Convert a list of raw YAML entries into chunk dicts.
-    Pure function — no I/O. Used by both local and S3 paths.
-    """
-    chunks = []
-    for entry in entries:
-        text = chunk_entry(entry)
-        if not text or not text.strip():
-            print(f"  Skipping empty entry: {entry.get('id')}")
-            continue
-        chunks.append({
-            'id':       entry['id'],
-            'bot_id':   bot_id,
-            'category': entry.get('category', 'General'),
-            'heading':  entry.get('heading', ''),
-            'text':     text,
-        })
-    return chunks
-
-
-# ---------------------------------------------------------------------------
-# S3 / Lambda entry point  (takes a pre-parsed YAML dict for one file)
-# ---------------------------------------------------------------------------
-
-def chunk_yaml_content(data: dict, bot_id: str) -> list[dict]:
-    """
-    Process a single already-parsed YAML file's contents into chunks.
-
-    Args:
-        data:   Result of yaml.safe_load() for one data file
-        bot_id: The bot this data belongs to
-
-    Returns:
-        List of chunk dicts {id, bot_id, category, heading, text}
-    """
-    entries = data.get('entries', [])
-    return entries_to_chunks(entries, bot_id)
-
-
-# ---------------------------------------------------------------------------
-# Local filesystem entry point
-# ---------------------------------------------------------------------------
-
-def get_bot_data_path(bot_id: str) -> Path:
-    return Path(__file__).parent.parent / 'bots' / bot_id / 'data'
-
-
-def load_yaml_files(data_path: Path) -> list[dict]:
-    """Load all .yml files from a bot's local data folder, return combined entries."""
-    all_entries = []
-
-    if not data_path.exists():
-        print(f"  Warning: data folder not found at {data_path}")
-        return all_entries
-
-    yml_files = sorted(data_path.glob('*.yml'))
-    if not yml_files:
-        print(f"  Warning: no .yml files found in {data_path}")
-        return all_entries
-
-    for yml_file in yml_files:
-        print(f"  Reading {yml_file.name}...")
-        with open(yml_file, 'r') as f:
-            data = yaml.safe_load(f)
-        entries = data.get('entries', [])
-        all_entries.extend(entries)
-        print(f"    Found {len(entries)} entries")
-
-    return all_entries
-
-
 def load_bot_data(bot_id: str) -> list[dict]:
     """
-    Local dev entry point. Load and chunk all YAML data for a bot.
+    Main entry point. Load and chunk all data for a bot.
 
-    Returns:
-        List of chunk dicts ready for embedding: {id, bot_id, category, heading, text}
+    Returns a list of dicts ready for embedding:
+        {id, bot_id, category, heading, text}
     """
     print(f"Loading data for bot: {bot_id}")
-    data_path = get_bot_data_path(bot_id)
-    entries   = load_yaml_files(data_path)
+    print(f"  Source: s3://{S3_BUCKET}/{S3_PREFIX}/{bot_id}/data/")
+
+    entries = load_yaml_files(bot_id)
 
     if not entries:
         print(f"  No entries found for bot '{bot_id}'")
         return []
 
-    chunks = entries_to_chunks(entries, bot_id)
+    chunks = []
+    for entry in entries:
+        text = chunk_entry(entry)
+
+        if not text or not text.strip():
+            print(f"  Skipping empty entry: {entry.get('id')}")
+            continue
+
+        chunks.append({
+            'id': entry['id'],
+            'bot_id': bot_id,
+            'category': entry.get('category', 'General'),
+            'heading': entry.get('heading', ''),
+            'text': text
+        })
+
     print(f"  Produced {len(chunks)} chunks for bot '{bot_id}'")
     return chunks

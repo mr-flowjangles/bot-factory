@@ -1,299 +1,235 @@
 """
 Embedding Generator (Universal)
 
-Reads a bot's YAML data (local or S3), generates OpenAI embeddings,
-and stores them in the ChatbotRAG DynamoDB table with a bot_id field.
+Reads a bot's data via the chunker, generates embeddings via AWS Bedrock
+(Amazon Titan Text Embeddings V2), and stores them in the ChatbotRAG
+DynamoDB table with a bot_id field.
 
-Kill-and-fill scoped to bot_id — other bots are untouched.
+Uses kill-and-fill scoped to the bot_id — only deletes and rewrites
+embeddings for the specified bot. Other bots are untouched.
 
-Data source is controlled by the DATA_SOURCE env var:
-  DATA_SOURCE=local  → reads from bots/{bot_id}/data/ (default for local dev)
-  DATA_SOURCE=s3     → reads from S3 bucket (required for Lambda)
+Behavior:
+  - First run:      No embeddings found → generates automatically
+  - Already exist:  Prompts "Regenerate? (y/n)" before proceeding
+  - --force flag:   Skips the prompt, regenerates without asking
 
-S3 bucket name is set via BOT_DATA_BUCKET env var.
-
-─────────────────────────────────────────────────────────
-LOCAL USAGE
-─────────────────────────────────────────────────────────
+Usage:
     python -m ai.factory.core.generate_embeddings guitar
     python -m ai.factory.core.generate_embeddings guitar --force
-
-─────────────────────────────────────────────────────────
-LAMBDA INVOCATION (from AWS Console or CLI)
-─────────────────────────────────────────────────────────
-Invoke the Lambda with a JSON payload:
-
-    { "bot_id": "guitar" }
-    { "bot_id": "guitar", "force": true }
-
-Lambda env vars required:
-    DATA_SOURCE=s3
-    BOT_DATA_BUCKET=your-bucket-name
-    OPENAI_API_KEY=sk-...
 """
 import os
 import sys
 import json
-import yaml
+import boto3
 from decimal import Decimal
-from collections import Counter
-from .connections import get_rag_table, get_openai_client
+from .chunker import load_bot_data
+
+
+BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
+EMBEDDING_DIMENSIONS = 1024
 
 
 # ---------------------------------------------------------------------------
-# Data loading — local or S3
+# Connections
 # ---------------------------------------------------------------------------
 
-def load_bot_data_local(bot_id: str) -> list[dict]:
-    """Load and chunk YAML files from local bots/{bot_id}/data/ directory."""
-    from .chunker import load_bot_data
-    return load_bot_data(bot_id)
+def get_dynamodb_connection():
+    """Get DynamoDB connection (works with LocalStack or AWS)."""
+    endpoint_url = os.getenv('AWS_ENDPOINT_URL', '')
+
+    if endpoint_url == '':
+        return boto3.resource('dynamodb', region_name='us-east-1')
+    else:
+        return boto3.resource(
+            'dynamodb',
+            endpoint_url=endpoint_url,
+            region_name=os.getenv('AWS_REGION', 'us-east-1'),
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', 'test'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', 'test')
+        )
 
 
-def load_bot_data_s3(bot_id: str, bucket: str) -> list[dict]:
-    """
-    Load and chunk YAML files from S3.
-
-    Expects files at: s3://{bucket}/bots/{bot_id}/data/*.yml
-
-    Each YAML file should have the same structure as local data files.
-    Passes raw YAML content through the same chunker logic.
-    """
-    from .chunker import chunk_yaml_content  # see note below
-
-    s3 = boto3.client('s3')
-    prefix = f"bots/{bot_id}/data/"
-
-    paginator = s3.get_paginator('list_objects_v2')
-    pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-
-    all_chunks = []
-    file_count = 0
-
-    for page in pages:
-        for obj in page.get('Contents', []):
-            key = obj['Key']
-            if not key.endswith(('.yml', '.yaml')):
-                continue
-
-            print(f"  Loading s3://{bucket}/{key}")
-            response = s3.get_object(Bucket=bucket, Key=key)
-            raw = response['Body'].read().decode('utf-8')
-            data = yaml.safe_load(raw)
-
-            chunks = chunk_yaml_content(data, bot_id=bot_id)
-            all_chunks.extend(chunks)
-            file_count += 1
-
-    print(f"  Loaded {file_count} files → {len(all_chunks)} chunks from S3")
-    return all_chunks
-
-
-def load_bot_data(bot_id: str) -> list[dict]:
-    """Route to local or S3 loader based on DATA_SOURCE env var."""
-    source = os.getenv('DATA_SOURCE', 'local').lower()
-
-    if source == 's3':
-        bucket = os.getenv('BOT_DATA_BUCKET')
-        if not bucket:
-            raise EnvironmentError("BOT_DATA_BUCKET must be set when DATA_SOURCE=s3")
-        return load_bot_data_s3(bot_id, bucket)
-
-    return load_bot_data_local(bot_id)
+def get_bedrock_client():
+    """Initialize Bedrock runtime client. Always calls real AWS."""
+    return boto3.client('bedrock-runtime', region_name='us-east-1')
 
 
 # ---------------------------------------------------------------------------
 # Embedding generation
 # ---------------------------------------------------------------------------
 
-def generate_embedding(text: str) -> list[float]:
-    client = get_openai_client()
-    response = client.embeddings.create(model="text-embedding-3-small", input=text)
-    return response.data[0].embedding
+def generate_embedding(client, text: str) -> list[float]:
+    """Generate a single embedding vector via Bedrock Titan V2."""
+    response = client.invoke_model(
+        modelId=BEDROCK_MODEL_ID,
+        body=json.dumps({
+            "inputText": text,
+            "dimensions": EMBEDDING_DIMENSIONS,
+            "normalize": True
+        })
+    )
+    return json.loads(response['body'].read())['embedding']
 
 
-def generate_all_embeddings(chunks: list[dict]) -> list[dict]:
-    print(f"\nGenerating embeddings ({len(chunks)} chunks)...")
+def generate_all_embeddings(client, chunks: list[dict]) -> list[dict]:
+    """Generate embeddings for all chunks. Adds 'embedding' key to each chunk."""
+    print(f"\nGenerating embeddings with Bedrock Titan V2 ({len(chunks)} chunks)...")
+
     for idx, chunk in enumerate(chunks, 1):
         print(f"  [{idx}/{len(chunks)}] {chunk['category']}: {chunk['id']}")
+
         try:
-            chunk['embedding'] = generate_embedding(chunk['text'])
+            chunk['embedding'] = generate_embedding(client, chunk['text'])
         except Exception as e:
-            raise RuntimeError(f"Embedding failed for '{chunk['id']}': {e}") from e
+            print(f"  Error generating embedding for '{chunk['id']}': {e}")
+            sys.exit(1)
+
     print(f"  Done — {len(chunks)} embeddings generated")
     return chunks
 
 
 # ---------------------------------------------------------------------------
-# DynamoDB operations
+# DynamoDB storage
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# DynamoDB operations
-# ---------------------------------------------------------------------------
-
-from boto3.dynamodb.conditions import Attr
-
-
-def bot_embeddings_exist(bot_id: str) -> bool:
-    """Check if this bot already has any embeddings stored."""
-    table = get_rag_table()
-    response = table.scan(FilterExpression=Attr('bot_id').eq(bot_id), Limit=1)
-    return bool(response.get('Items'))
-
-
-def clear_bot_embeddings(bot_id: str):
-    """Delete all existing embeddings for this bot. Other bots untouched."""
+def clear_bot_embeddings(table, bot_id: str):
+    """
+    Delete all existing embeddings for this bot_id.
+    Only removes rows where bot_id matches — other bots are untouched.
+    """
     print(f"\nClearing existing embeddings for bot '{bot_id}'...")
-    table = get_rag_table()
 
-    items = []
-    response = table.scan(FilterExpression=Attr('bot_id').eq(bot_id))
-    items.extend(response.get('Items', []))
+    response = table.scan()
+    items = response.get('Items', [])
+
     while 'LastEvaluatedKey' in response:
-        response = table.scan(
-            FilterExpression=Attr('bot_id').eq(bot_id),
-            ExclusiveStartKey=response['LastEvaluatedKey'],
-        )
+        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
         items.extend(response.get('Items', []))
 
-    if not items:
+    bot_items = [item for item in items if item.get('bot_id') == bot_id]
+
+    if not bot_items:
         print(f"  No existing embeddings found for '{bot_id}'")
         return
 
     with table.batch_writer() as batch:
-        for item in items:
+        for item in bot_items:
             batch.delete_item(Key={'id': item['id']})
 
-    print(f"  Deleted {len(items)} existing embeddings")
+    print(f"  Deleted {len(bot_items)} existing embeddings")
 
 
-def store_embeddings(chunks: list[dict]):
+def store_embeddings(table, chunks: list[dict]):
     """Write chunks with embeddings to DynamoDB."""
     print(f"\nStoring {len(chunks)} embeddings in ChatbotRAG...")
-    table = get_rag_table()
+
     with table.batch_writer() as batch:
         for chunk in chunks:
-            batch.put_item(Item={
-                'id':        f"{chunk['bot_id']}_{chunk['id']}",
-                'bot_id':    chunk['bot_id'],
-                'category':  chunk['category'],
-                'heading':   chunk['heading'],
-                'text':      chunk['text'],
+            item = {
+                'id': f"{chunk['bot_id']}_{chunk['id']}",
+                'bot_id': chunk['bot_id'],
+                'category': chunk['category'],
+                'heading': chunk['heading'],
+                'text': chunk['text'],
                 'embedding': [Decimal(str(x)) for x in chunk['embedding']],
-            })
+            }
+            batch.put_item(Item=item)
+
     print(f"  Done — {len(chunks)} embeddings stored")
 
 
 # ---------------------------------------------------------------------------
-# Core pipeline
+# Check if embeddings exist
 # ---------------------------------------------------------------------------
 
-def run_pipeline(bot_id: str, force: bool = False) -> dict:
-    """
-    Full pipeline: load data → generate embeddings → store in DynamoDB.
+def bot_embeddings_exist(table, bot_id: str) -> bool:
+    """Check if this bot already has embeddings in the table."""
+    response = table.scan()
+    items = response.get('Items', [])
 
-    Returns a summary dict (used by both CLI and Lambda handler).
+    while 'LastEvaluatedKey' in response:
+        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+        items.extend(response.get('Items', []))
+
+    return any(item.get('bot_id') == bot_id for item in items)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def generate_bot_embeddings(bot_id: str, force: bool = False):
+    """
+    Full pipeline: chunker → Bedrock Titan V2 → DynamoDB for a given bot.
+
+    Args:
+        bot_id: The bot folder name (e.g., 'guitar')
+        force:  If True, regenerate even if embeddings already exist
     """
     print("\n" + "=" * 60)
     print(f"  Bot Factory — Embedding Generator")
-    print(f"  Bot:    {bot_id}")
-    print(f"  Source: {os.getenv('DATA_SOURCE', 'local').upper()}")
+    print(f"  Bot: {bot_id}")
+    print(f"  Model: {BEDROCK_MODEL_ID} ({EMBEDDING_DIMENSIONS}d)")
     print("=" * 60 + "\n")
 
-    # Check for existing embeddings
-    if bot_embeddings_exist(bot_id) and not force:
-        # In Lambda context there's no stdin — force must be explicit
-        if not sys.stdin.isatty():
-            return {
-                'status': 'skipped',
-                'message': f"Embeddings already exist for '{bot_id}'. Pass force=true to regenerate.",
-            }
-        answer = input(f"Embeddings already exist for '{bot_id}'. Regenerate? (y/n): ").strip().lower()
-        if answer != 'y':
-            print("  Skipping — existing embeddings unchanged.")
-            return {'status': 'skipped', 'message': 'User declined regeneration'}
+    # Step 1: Connect to DynamoDB
+    dynamodb = get_dynamodb_connection()
+    table = dynamodb.Table('ChatbotRAG')
 
-    # Load data
+    # Step 2: Check if embeddings already exist
+    if bot_embeddings_exist(table, bot_id):
+        if not force:
+            answer = input(f"Embeddings already exist for '{bot_id}'. Regenerate? (y/n): ").strip().lower()
+            if answer != 'y':
+                print("  Skipping — existing embeddings unchanged.")
+                return
+        print(f"  Regenerating embeddings for '{bot_id}'...")
+
+    # Step 3: Load and chunk the bot's data
     chunks = load_bot_data(bot_id)
+
     if not chunks:
-        raise ValueError(f"No data found for bot '{bot_id}'")
+        print(f"No data found for bot '{bot_id}'. Check bots/{bot_id}/data/")
+        sys.exit(1)
 
-    # Generate embeddings
-    chunks = generate_all_embeddings(chunks)
+    # Step 4: Generate embeddings via Bedrock
+    bedrock_client = get_bedrock_client()
+    chunks = generate_all_embeddings(bedrock_client, chunks)
 
-    # Kill and fill
-    clear_bot_embeddings(bot_id)
-    store_embeddings(chunks)
+    # Step 5: Clear old embeddings for this bot (kill-and-fill, scoped)
+    clear_bot_embeddings(table, bot_id)
+
+    # Step 6: Store new embeddings
+    store_embeddings(table, chunks)
 
     # Summary
+    from collections import Counter
     cats = Counter(c['category'] for c in chunks)
-    summary = {
-        'status': 'success',
-        'bot_id': bot_id,
-        'total_embeddings': len(chunks),
-        'by_category': dict(cats),
-    }
 
     print("\n" + "=" * 60)
-    print(f"  Complete! {len(chunks)} embeddings stored for '{bot_id}'")
+    print(f"  Embeddings generation complete!")
+    print("=" * 60)
+    print(f"\n  Bot: {bot_id}")
+    print(f"  Model: {BEDROCK_MODEL_ID}")
+    print(f"  Dimensions: {EMBEDDING_DIMENSIONS}")
+    print(f"  Total embeddings: {len(chunks)}")
     for cat, count in cats.most_common():
         print(f"    {cat}: {count}")
-    print("=" * 60 + "\n")
+    print(f"  Stored in: ChatbotRAG table (bot_id='{bot_id}')")
+    print()
 
-    return summary
-
-
-# ---------------------------------------------------------------------------
-# Lambda handler
-# ---------------------------------------------------------------------------
-
-def lambda_handler(event, context):
-    """
-    AWS Lambda entry point.
-
-    Expected event payload:
-        { "bot_id": "guitar" }
-        { "bot_id": "guitar", "force": true }
-
-    Required Lambda env vars:
-        DATA_SOURCE=s3
-        BOT_DATA_BUCKET=your-s3-bucket
-        OPENAI_API_KEY=sk-...
-    """
-    try:
-        bot_id = event.get('bot_id')
-        if not bot_id:
-            return {'statusCode': 400, 'body': json.dumps({'error': 'bot_id is required'})}
-
-        force = bool(event.get('force', False))
-        result = run_pipeline(bot_id, force=force)
-
-        return {'statusCode': 200, 'body': json.dumps(result)}
-
-    except Exception as e:
-        print(f"ERROR: {e}")
-        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 def main():
+    """CLI entry point."""
     if len(sys.argv) < 2:
         print("Usage: python -m ai.factory.core.generate_embeddings <bot_id> [--force]")
-        print("Example: python -m ai.factory.core.generate_embeddings guitar --force")
+        print("Example: python -m ai.factory.core.generate_embeddings guitar")
         sys.exit(1)
 
     bot_id = sys.argv[1]
     force = '--force' in sys.argv
 
-    try:
-        run_pipeline(bot_id, force=force)
-    except Exception as e:
-        print(f"\nERROR: {e}")
-        sys.exit(1)
+    generate_bot_embeddings(bot_id, force=force)
 
 
 if __name__ == '__main__':
