@@ -30,9 +30,38 @@ You'll need:
 **AWS Bedrock access** — after your first call to Bedrock you may be prompted to request model access:
 
 - Go to the AWS Console → Bedrock → Model catalog (or Model access)
-- There should be a prompt to submit use case details at the top of the page
-- Fill it out simply ("AI chatbot for personal portfolio website")
+- Fill out the use case form at the top of the page ("AI chatbot for personal portfolio website")
 - You need access to both `amazon.titan-embed-text-v2:0` (embeddings) and `claude-sonnet-4` (responses)
+
+
+## Where to Edit
+
+### ✅ Edit freely — this is your bot
+```
+bots/<bot_id>/config.yml       # Bot settings, model params, RAG config
+```
+```
+s3://<bucket>/<bot_id>/
+  prompt.yml                   # System prompt
+  data/*.yml                   # Knowledge base files
+```
+
+### ⚠️ Edit with care — shared framework
+```
+factory/core/
+  chatbot.py                   # Orchestrator (chat pipeline)
+  retriever.py                 # Semantic search / embedding lookup
+  responder.py                 # Claude/Bedrock call
+  connections.py               # Shared AWS clients
+```
+
+Changes here affect **all bots**. Test against multiple bots before committing.
+
+### 🚫 Don't edit — generated or infrastructure
+```
+factory/main.py                # Auto-discovers bots from bots/ folder
+scripts/scaffold_bot.py        # Bot scaffolding tool
+```
 
 ## Creating a New Bot
 
@@ -40,14 +69,8 @@ You'll need:
 
 Pick a bot ID. This ID drives everything — folder names, API endpoints, HTML filenames.
 
-```
-ai/factory/bots/{bot_id}/
-```
-
-Example:
-
 ```bash
-mkdir -p ai/factory/bots/cooking
+mkdir -p ai/factory/bots/{bot_id}
 ```
 
 ### Step 2: Write config.yml
@@ -102,13 +125,7 @@ See [Config Reference](#config-reference) for all fields.
 
 ### Step 3: Write prompt.yml
 
-This is the system prompt sent to Claude with every request. It defines personality, rules, and response formatting. The `prompt` field supports `{current_date}` as a placeholder that gets injected at runtime.
-
-```
-ai/factory/bots/{bot_id}/prompt.yml
-```
-
-Example:
+This is the system prompt sent to Claude with every request. The `prompt` field supports `{current_date}` as a placeholder injected at runtime.
 
 ```yaml
 prompt: |
@@ -124,7 +141,7 @@ prompt: |
 
 ### Step 4: Add knowledge data
 
-Create YAML files in the `data/` folder using the universal data format, then upload them to S3. The embedding pipeline reads from S3, not the local filesystem.
+Create YAML files in the `data/` folder, then upload them to S3. The embedding pipeline reads from S3, not the local filesystem.
 
 ```
 s3://bot-factory-data/bots/{bot_id}/data/
@@ -132,7 +149,7 @@ s3://bot-factory-data/bots/{bot_id}/data/
 
 Two entry types are supported:
 
-**String entries** — content is already readable, embedded as-is:
+**String entries** — content is embedded as-is:
 
 ```yaml
 - id: knife_basics
@@ -161,7 +178,7 @@ Two entry types are supported:
       notes: "Warm red center."
 ```
 
-The chunker flattens object entries using the template, so each item becomes a standalone text chunk for embedding.
+The chunker flattens object entries using the template so each item becomes a standalone text chunk for embedding.
 
 **Upload your data files to S3:**
 
@@ -195,14 +212,14 @@ The `--force` flag does a kill-and-fill scoped to your bot ID. Other bots' embed
 
 ### Step 5b: Push embeddings to prod
 
-Embeddings are generated against LocalStack locally. To push them to prod DynamoDB, use the export/import scripts in `ai/scripts/`. Both scripts take a `bot_id` argument to scope the operation.
+Embeddings are generated against LocalStack locally. To push them to prod DynamoDB, use the export/import scripts in `ai/scripts/`.
 
 ```bash
 # Export one bot from LocalStack to _scratch/ (run inside container)
-docker compose exec api python /app/ai/scripts/export_embeddings.py guitar
+docker compose exec api python /app/ai/scripts/export_embeddings.py {bot_id}
 
 # Import one bot to prod DynamoDB (run from host)
-python3 ai/scripts/import_embeddings.py guitar
+python3 ai/scripts/import_embeddings.py {bot_id}
 ```
 
 The export saves to `_scratch/{bot_id}-embeddings-export.json` (already in `.gitignore`). The import deletes existing rows for that bot in prod, then writes the new ones. Other bots are untouched.
@@ -240,12 +257,12 @@ docker compose up -d
 
 Visit `http://localhost:8080/{bot_id}.html` and start chatting.
 
-> **Tip:** If you update backend code (router, chatbot, retrieval), rebuild with `docker compose up --build -d`. Frontend file changes (HTML, JS, CSS) require a hard refresh (Ctrl+Shift+R) if cached.
+> **Tip:** If you update backend code, rebuild with `docker compose up --build -d`. Frontend changes (HTML, JS, CSS) require a hard refresh (Ctrl+Shift+R) if cached.
 
 ### Step 8: Deploy
 
 ```bash
-# 1. Push embeddings to prod (if data changed — see Step 5b)
+# 1. Push embeddings to prod (only if data changed)
 docker compose exec api python /app/ai/scripts/export_embeddings.py {bot_id}
 python3 ai/scripts/import_embeddings.py {bot_id}
 
@@ -261,7 +278,7 @@ aws s3 cp app/assets/{bot_id}/ s3://aws-serverless-resume-prod/assets/{bot_id}/ 
 aws cloudfront create-invalidation --distribution-id <your_id> --paths "/*"
 ```
 
-Skip step 1 if you only changed code or frontend files. Skip steps 2-3 if you only changed knowledge data.
+Skip step 1 if you only changed code or frontend files. Skip steps 2–3 if you only changed knowledge data.
 
 ## Project Structure
 
@@ -277,7 +294,7 @@ ai/factory/
 │   ├── generate_embeddings.py ← chunks → Bedrock Titan V2 → DynamoDB
 │   ├── retrieval.py           ← question → Bedrock embedding → cosine search
 │   ├── chatbot.py             ← context + question → Bedrock Claude → response
-│   └── router.py              ← creates FastAPI endpoints per bot
+│   └── router.py             ← creates FastAPI endpoints per bot
 │
 └── bots/                      ← one folder per bot
     └── guitar/
@@ -285,19 +302,6 @@ ai/factory/
         ├── prompt.yml         ← system prompt for Claude
         └── data/              ← source files (sync to S3 before embedding)
             └── guitar-knowledge.yml
-
-app/                           ← frontend (generated by scaffold_bot.py)
-├── guitar.html                ← bot page
-├── bot_scripts/
-│   ├── bot-factory.css        ← shared framework styles
-│   ├── chat.js                ← shared chat module
-│   ├── navigation.js          ← shared nav highlighting
-│   └── guitar/                ← bot-specific
-│       ├── guitar.css         ← custom styles (e.g., tab rendering)
-│       └── formatter.js       ← custom message formatter (optional)
-└── assets/
-    └── guitar/                ← bot-specific images
-        └── logo.png
 ```
 
 ## Config Reference
@@ -321,11 +325,11 @@ app/                           ← frontend (generated by scaffold_bot.py)
 
 ### bot.model
 
-| Field        | Type    | Description                                                         |
-| ------------ | ------- | ------------------------------------------------------------------- |
-| `provider`   | string  | `"bedrock"`                                                         |
+| Field        | Type    | Description                                                            |
+| ------------ | ------- | ---------------------------------------------------------------------- |
+| `provider`   | string  | `"bedrock"`                                                            |
 | `name`       | string  | Bedrock model ID, e.g., `"us.anthropic.claude-sonnet-4-20250514-v1:0"` |
-| `max_tokens` | integer | Max response length.                                                |
+| `max_tokens` | integer | Max response length.                                                   |
 
 ### bot.rag
 
@@ -356,8 +360,6 @@ List of starter questions shown as chips in the chat UI.
 
 The shared `chat.js` supports a plugin hook for bot-specific message rendering. If your bot outputs content that needs special formatting (like guitar tablature), create a `formatter.js` in your bot's `bot_scripts/{bot_id}/` folder.
 
-The formatter registers itself on `window.BOT_CONFIG.formatMessage`:
-
 ```javascript
 function myFormatMessage(text, container) {
   // custom rendering logic
@@ -367,7 +369,7 @@ window.BOT_CONFIG = window.BOT_CONFIG || {};
 window.BOT_CONFIG.formatMessage = myFormatMessage;
 ```
 
-Load it in your HTML **after** the BOT_CONFIG block and **before** chat.js:
+Load it in your HTML **after** the BOT_CONFIG block and **before** `chat.js`:
 
 ```html
 <script>
@@ -381,7 +383,7 @@ If no formatter is registered, `chat.js` uses its default plain text renderer.
 
 ## Auto-Discovery
 
-The factory uses auto-discovery in `__init__.py`. At startup, it scans every folder in `bots/`, reads each `config.yml`, and registers API routes for any bot with `enabled: true`. Adding a new bot never requires editing `main.py`.
+At startup, `__init__.py` scans every folder in `bots/`, reads each `config.yml`, and registers API routes for any bot with `enabled: true`. Adding a new bot never requires editing `main.py`.
 
 Each bot gets these endpoints:
 
@@ -391,13 +393,6 @@ Each bot gets these endpoints:
 - `GET  /api/{bot_id}/suggestions` — starter questions
 - `GET  /api/{bot_id}/warmup` — pre-load embedding cache
 
-## Existing Bots
-
-| Bot                | ID       | Endpoint           | Description                                                                  |
-| ------------------ | -------- | ------------------ | ---------------------------------------------------------------------------- |
-| RobbAI             | —        | `/api/ai/chat`     | Resume assistant. Runs on legacy code in `ai/`, not yet migrated to factory. |
-| The Fret Detective | `guitar` | `/api/guitar/chat` | Electric guitar instruction. First factory bot.                              |
-
 ## Embedding Notes
 
 All bot embeddings share one DynamoDB table (`ChatbotRAG`), partitioned by bot ID. Each record's primary key is `{bot_id}_{entry_id}` and includes a `bot_id` field for filtering.
@@ -406,4 +401,17 @@ Embeddings are generated using **Bedrock Titan Text Embeddings V2** (`amazon.tit
 
 The kill-and-fill approach on `--force` only deletes rows matching the target bot ID. Running embeddings for one bot never affects another.
 
-If your bot has many similar entries (like The Fret Detective's 48 triad voicings), increase `top_k` in your config to 10 or higher so the right result isn't crowded out by near-duplicates.
+If your bot has many similar entries (like The Fret Detective's 48 triad voicings), increase `top_k` to 10 or higher so the right result isn't crowded out by near-duplicates.
+
+## Command Reference
+
+| Task | Local (container) | Production (host) | Notes |
+| ---- | ----------------- | ----------------- | ----- |
+| Generate embeddings | `docker compose exec api python -m ai.factory.core.generate_embeddings {bot_id}` | — | Always run locally first |
+| Force regenerate | `... generate_embeddings {bot_id} --force` | — | Scoped to bot ID |
+| Sync data to S3 | `aws --endpoint-url=http://localhost:4566 s3 sync ...` | `aws s3 sync bots/{bot_id}/data/ s3://...` | Run before embedding |
+| Export embeddings | `docker compose exec api python /app/ai/scripts/export_embeddings.py {bot_id}` | — | Saves to `_scratch/` |
+| Import embeddings | — | `python3 ai/scripts/import_embeddings.py {bot_id}` | Deletes existing rows first |
+| Deploy Lambda | — | `./build-lambda.sh` then `aws lambda update-function-code ...` | — |
+| Deploy frontend | — | `aws s3 cp ...` + CloudFront invalidation | — |
+| Start dev server | `docker compose up -d` | — | API :8000, frontend :8080 |
