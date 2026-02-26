@@ -3,16 +3,27 @@ Bot Factory
 
 Auto-discovers bots from the bots/ folder and exposes a single
 FastAPI router containing all enabled bots.
+
+Embedded in another project:
+    from ai.factory import factory_router
+    app.include_router(factory_router, prefix=prefix)
+
+Standalone:
+    uvicorn factory.main:app --reload --port 8080
 """
 import yaml
 from pathlib import Path
 from fastapi import APIRouter
-from factory.core.router import create_bot_router
+from .core.router import create_bot_router
 
 
 def _discover_and_build_router() -> APIRouter:
+    """
+    Scan bots/ folder, find enabled bots, and combine
+    their routers into one parent router.
+    """
     router = APIRouter()
-    bots_path = Path(__file__).resolve().parent.parent / 'bots'
+    bots_path = Path(__file__).parent / 'bots'
 
     if not bots_path.exists():
         return router
@@ -45,4 +56,5 @@ def _discover_and_build_router() -> APIRouter:
     return router
 
 
+# Build the router at import time — same pattern as ai/router.py
 factory_router = _discover_and_build_router()

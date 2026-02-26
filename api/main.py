@@ -18,7 +18,6 @@ import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from factory.core.router import create_bot_router
 
 
@@ -50,19 +49,17 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 def discover_bots() -> list[str]:
-    """
-    Find all bot IDs by scanning factory/bots/ for directories
-    that contain a config.yml.
-    """
     bots_path = Path(__file__).parent.parent / 'factory' / 'bots'
 
     if not bots_path.exists():
         print(f"Warning: bots directory not found at {bots_path}")
         return []
 
+    EXCLUDED = {'TEMPLATE', 'testbot'}  # add any non-production bots here
+
     bots = []
     for path in sorted(bots_path.iterdir()):
-        if path.is_dir() and (path / 'config.yml').exists():
+        if path.is_dir() and (path / 'config.yml').exists() and path.name not in EXCLUDED:
             bots.append(path.name)
 
     return bots
@@ -92,6 +89,14 @@ async def list_bots():
 
 
 # ---------------------------------------------------------------------------
+# Mount bots at import time so routes are registered before the app starts
+# ---------------------------------------------------------------------------
+
+_bot_ids = discover_bots()
+mount_bots(_bot_ids)
+
+
+# ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
@@ -103,7 +108,6 @@ async def startup():
     if not bot_ids:
         print("  Warning: no bots found in factory/bots/")
     else:
-        mount_bots(bot_ids)
         print(f"\n  {len(bot_ids)} bot(s) active: {', '.join(bot_ids)}")
 
     print()
