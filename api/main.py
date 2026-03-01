@@ -50,7 +50,7 @@ app.add_middleware(
 
 
 def discover_bots() -> list[str]:
-    bots_path = Path(__file__).parent.parent / "factory" / "bots"
+    bots_path = Path(__file__).parent.parent / "scripts" / "bots"
 
     if not bots_path.exists():
         print(f"Warning: bots directory not found at {bots_path}")

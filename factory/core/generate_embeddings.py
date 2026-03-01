@@ -14,8 +14,12 @@ Behavior:
   - --force flag:   Skips the prompt, regenerates without asking
 
 Usage:
-    python -m ai.factory.core.generate_embeddings guitar
-    python -m ai.factory.core.generate_embeddings guitar --force
+    # Local (S3 + DynamoDB → LocalStack, Bedrock → real AWS)
+    python -m factory.core.generate_embeddings guitar
+
+    # Production (everything → real AWS)
+    APP_ENV=production python -m factory.core.generate_embeddings guitar
+    APP_ENV=production python -m factory.core.generate_embeddings guitar --force
 """
 
 import os
@@ -35,24 +39,22 @@ EMBEDDING_DIMENSIONS = 1024
 
 
 def get_dynamodb_connection():
-    """Get DynamoDB connection (works with LocalStack or AWS)."""
-    endpoint_url = os.getenv("AWS_ENDPOINT_URL", "")
+    """Get DynamoDB connection. Uses LocalStack for local, real AWS for production."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
-    if endpoint_url == "":
-        return boto3.resource("dynamodb", region_name="us-east-1")
-    else:
-        return boto3.resource(
-            "dynamodb",
-            endpoint_url=endpoint_url,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
-        )
+    return boto3.resource(
+        "dynamodb",
+        endpoint_url="http://localhost:4566",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
 
 def get_bedrock_client():
-    """Initialize Bedrock runtime client. Always calls real AWS."""
-    return boto3.client("bedrock-runtime", region_name="us-east-1")
+    """Bedrock always calls real AWS regardless of APP_ENV."""
+    return boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +166,16 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
     Full pipeline: chunker → Bedrock Titan V2 → DynamoDB for a given bot.
 
     Args:
-        bot_id: The bot folder name (e.g., 'guitar')
+        bot_id: The bot identifier (e.g., 'guitar')
         force:  If True, regenerate even if embeddings already exist
     """
+    env = os.getenv("APP_ENV", "local")
+
     print("\n" + "=" * 60)
     print("  Bot Factory — Embedding Generator")
     print(f"  Bot: {bot_id}")
     print(f"  Model: {BEDROCK_MODEL_ID} ({EMBEDDING_DIMENSIONS}d)")
+    print(f"  Environment: {env}")
     print("=" * 60 + "\n")
 
     # Step 1: Connect to DynamoDB
@@ -190,10 +195,10 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
     chunks = load_bot_data(bot_id)
 
     if not chunks:
-        print(f"No data found for bot '{bot_id}'. Check bots/{bot_id}/data/")
+        print(f"No data found for bot '{bot_id}'. Check s3://bot-factory-data/bots/{bot_id}/data/")
         sys.exit(1)
 
-    # Step 4: Generate embeddings via Bedrock
+    # Step 4: Generate embeddings via Bedrock (always real AWS)
     bedrock_client = get_bedrock_client()
     chunks = generate_all_embeddings(bedrock_client, chunks)
 
@@ -205,27 +210,27 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 
     # Summary
     from collections import Counter
-
     cats = Counter(c["category"] for c in chunks)
 
     print("\n" + "=" * 60)
     print("  Embeddings generation complete!")
     print("=" * 60)
-    print(f"\n  Bot: {bot_id}")
-    print(f"  Model: {BEDROCK_MODEL_ID}")
+    print(f"\n  Bot:        {bot_id}")
+    print(f"  Env:        {env}")
+    print(f"  Model:      {BEDROCK_MODEL_ID}")
     print(f"  Dimensions: {EMBEDDING_DIMENSIONS}")
-    print(f"  Total embeddings: {len(chunks)}")
+    print(f"  Total:      {len(chunks)} embeddings")
     for cat, count in cats.most_common():
         print(f"    {cat}: {count}")
-    print(f"  Stored in: ChatbotRAG table (bot_id='{bot_id}')")
+    print(f"  Table:      ChatbotRAG (bot_id='{bot_id}')")
     print()
 
 
 def main():
     """CLI entry point."""
     if len(sys.argv) < 2:
-        print("Usage: python -m ai.factory.core.generate_embeddings <bot_id> [--force]")
-        print("Example: python -m ai.factory.core.generate_embeddings guitar")
+        print("Usage: python -m factory.core.generate_embeddings <bot_id> [--force]")
+        print("Example: python -m factory.core.generate_embeddings guitar")
         sys.exit(1)
 
     bot_id = sys.argv[1]
