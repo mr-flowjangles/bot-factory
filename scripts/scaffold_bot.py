@@ -2,15 +2,17 @@
 """
 Bot Factory — Bot Scaffolder
 
-Creates the full bot structure: local config + S3 data storage.
+Creates the local bot structure and ensures the S3 bucket exists.
+Uploading prompt/data to S3 is a separate step (make deploy-bot).
 
 What it creates:
   Local:
-    bots/{bot_id}/config.yml        (template with bot_id filled in)
+    factory/bots/{bot_id}/config.yml    (bot settings template)
+    factory/bots/{bot_id}/prompt.yml    (system prompt template)
+    scripts/load/{bot_id}/              (drop YAML knowledge base files here)
 
   S3 (bot-factory-data bucket):
-    {bot_id}/prompt.yml             (empty prompt template)
-    {bot_id}/data/                  (ready for knowledge base files)
+    Creates the bucket if it doesn't exist
 
 Usage:
   python3 scripts/scaffold_bot.py cat
@@ -18,7 +20,6 @@ Usage:
 """
 
 import sys
-import os
 import argparse
 import boto3
 from pathlib import Path
@@ -40,35 +41,16 @@ CONFIG_TEMPLATE = """bot:
     suggestions: true
 
   model:
-    provider: "anthropic"
-    name: "claude-sonnet-4-20250514"
+    provider: "bedrock"
+    name: "anthropic.claude-sonnet-4-20250514-v1:0"
     max_tokens: 1024
 
   rag:
-    embedding_model: "text-embedding-3-small"
     top_k: 5
     similarity_threshold: 0.3
 
   boundaries:
     discuss_unrelated: false
-
-suggestions:
-  - "<suggestion_1>"
-  - "<suggestion_2>"
-  - "<suggestion_3>"
-
-frontend:
-  subtitle: "<subtitle>"
-  welcome: "<welcome_message>"
-  placeholder: "Type a message..."
-  badge: "Beta"
-  nav:
-    - icon: "💬"
-      label: "Chat"
-      section: "chat"
-    - icon: "ℹ️"
-      label: "About"
-      section: "about"
 """
 
 PROMPT_TEMPLATE = """system_prompt: |
@@ -87,13 +69,25 @@ PROMPT_TEMPLATE = """system_prompt: |
   - Be helpful and concise
 """
 
+LOAD_README = """# {bot_id} — Knowledge Base Source Files
+
+Drop YAML knowledge base files here, then run:
+
+  make load-bot bot={bot_id}
+
+This syncs files to s3://bot-factory-data/bots/{bot_id}/data/
+
+Then generate embeddings:
+
+  make embed bot={bot_id}
+"""
+
 
 # ---------------------------------------------------------------------------
 # S3 helpers
 # ---------------------------------------------------------------------------
 
 def get_s3_client(endpoint_url: str = None):
-    """Create an S3 client, using local endpoint if provided."""
     kwargs = {}
     if endpoint_url:
         kwargs = {
@@ -106,25 +100,12 @@ def get_s3_client(endpoint_url: str = None):
 
 
 def ensure_bucket(s3, bucket: str):
-    """Create the bucket if it doesn't exist."""
     try:
         s3.head_bucket(Bucket=bucket)
         print(f"  ✓ S3 bucket '{bucket}' exists")
-    except s3.exceptions.ClientError:
+    except Exception:
         s3.create_bucket(Bucket=bucket)
         print(f"  ✅ Created S3 bucket '{bucket}'")
-
-
-def upload_text(s3, bucket: str, key: str, content: str):
-    """Upload a text file to S3."""
-    s3.put_object(Bucket=bucket, Key=key, Body=content.encode("utf-8"))
-    print(f"  ✅ Uploaded s3://{bucket}/{key}")
-
-
-def create_folder(s3, bucket: str, prefix: str):
-    """Create an empty folder marker in S3."""
-    s3.put_object(Bucket=bucket, Key=prefix, Body=b"")
-    print(f"  ✅ Created s3://{bucket}/{prefix}")
 
 
 # ---------------------------------------------------------------------------
@@ -132,42 +113,49 @@ def create_folder(s3, bucket: str, prefix: str):
 # ---------------------------------------------------------------------------
 
 def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-data"):
-    """Create the full bot structure."""
     print(f"\n🔧 Scaffolding bot: {bot_id}\n")
 
-    # --- Local: bots/{bot_id}/config.yml ---
-    bot_dir = Path("bots") / bot_id
-
+    # --- Local: factory/bots/{bot_id}/config.yml + prompt.yml ---
+    bot_dir = Path("factory") / "bots" / bot_id
     if bot_dir.exists():
-        print(f"  ⚠️  bots/{bot_id}/ already exists — skipping local config")
+        print(f"  ⚠️  factory/bots/{bot_id}/ already exists — skipping")
     else:
         bot_dir.mkdir(parents=True)
-        config_content = CONFIG_TEMPLATE.format(bot_id=bot_id)
         config_path = bot_dir / "config.yml"
-        config_path.write_text(config_content)
+        config_path.write_text(CONFIG_TEMPLATE.format(bot_id=bot_id))
         print(f"  ✅ Created {config_path}")
 
-    # --- S3: prompt + data folder ---
+        prompt_path = bot_dir / "prompt.yml"
+        prompt_path.write_text(PROMPT_TEMPLATE.format(bot_id=bot_id))
+        print(f"  ✅ Created {prompt_path}")
+
+    # --- Local: scripts/load/{bot_id}/ ---
+    load_dir = Path("scripts") / "load" / bot_id
+    if load_dir.exists():
+        print(f"  ⚠️  scripts/load/{bot_id}/ already exists — skipping")
+    else:
+        load_dir.mkdir(parents=True)
+        readme_path = load_dir / "README.md"
+        readme_path.write_text(LOAD_README.format(bot_id=bot_id))
+        print(f"  ✅ Created scripts/load/{bot_id}/")
+
+    # --- S3: ensure bucket exists ---
     s3 = get_s3_client(endpoint_url)
     ensure_bucket(s3, bucket)
 
-    prompt_content = PROMPT_TEMPLATE.format(bot_id=bot_id)
-    upload_text(s3, bucket, f"{bot_id}/prompt.yml", prompt_content)
-    create_folder(s3, bucket, f"{bot_id}/data/")
-
     # --- Summary ---
     print(f"\n🎉 Bot '{bot_id}' scaffolded!\n")
-    print(f"   Local:")
-    print(f"     bots/{bot_id}/config.yml    ← edit bot settings")
-    print(f"   S3 ({bucket}):")
-    print(f"     {bot_id}/prompt.yml         ← edit system prompt")
-    print(f"     {bot_id}/data/              ← add knowledge base YAML files")
+    print(f"   Local files created:")
+    print(f"     factory/bots/{bot_id}/config.yml     ← edit bot settings")
+    print(f"     factory/bots/{bot_id}/prompt.yml     ← edit system prompt")
+    print(f"     scripts/load/{bot_id}/               ← drop knowledge base YAMLs here")
     print(f"\n   Next steps:")
-    print(f"   1. Edit bots/{bot_id}/config.yml with your bot's details")
-    print(f"   2. Edit the prompt in S3: {bot_id}/prompt.yml")
-    print(f"   3. Add data files to S3: {bot_id}/data/")
-    print(f"   4. Run embeddings: python3 core/generate_embeddings.py {bot_id}")
-    print(f"   5. Set enabled: true in config.yml and restart\n")
+    print(f"   1. Edit factory/bots/{bot_id}/config.yml")
+    print(f"   2. Edit factory/bots/{bot_id}/prompt.yml")
+    print(f"   3. Run: make deploy-bot bot={bot_id}   ← uploads prompt to S3")
+    print(f"   4. Add YAMLs to scripts/load/{bot_id}/ and run: make load-bot bot={bot_id}")
+    print(f"   5. Generate embeddings: make embed bot={bot_id}")
+    print(f"   6. Set enabled: true in config.yml and restart\n")
 
 
 # ---------------------------------------------------------------------------

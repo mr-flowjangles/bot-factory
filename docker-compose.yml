@@ -31,6 +31,7 @@ services:
       - localstack
     volumes:
       - .:/app
+      - ~/.aws:/root/.aws:ro
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload

@@ -28,19 +28,17 @@ S3_PREFIX = "bots"
 
 
 def get_s3_client():
-    """Get S3 client (works with LocalStack or AWS)."""
-    endpoint_url = os.getenv("AWS_ENDPOINT_URL", "")
+    """Get S3 client. Uses LocalStack for local, real AWS for production."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
-    if endpoint_url == "":
-        return boto3.client("s3", region_name="us-east-1")
-    else:
-        return boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
-        )
+    return boto3.client(
+        "s3",
+        endpoint_url="http://localhost:4566",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +79,7 @@ def load_yaml_files(bot_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Chunking logic (unchanged)
+# Chunking logic
 # ---------------------------------------------------------------------------
 
 

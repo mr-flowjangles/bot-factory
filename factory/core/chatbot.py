@@ -1,84 +1,119 @@
 """
 Chatbot Module (Parameterized)
 
-Generates responses using Claude API with RAG context.
-Loads the system prompt from each bot's prompt.md file and
+Generates responses using Claude via AWS Bedrock with RAG context.
+Loads the system prompt from S3 (bots/{bot_id}/prompt.yml) and
 caches it per bot_id for warm Lambda reuse.
-
-Same pattern as ai/chatbot.py — retrieve context, build messages,
-call Claude. Only difference: bot_id drives which prompt and
-embeddings are used.
 """
 
 import os
+import json
 import time
 import logging
-from datetime import datetime
-from pathlib import Path
 import yaml
 import boto3
-import configparser
+from datetime import datetime
 from .retrieval import retrieve_relevant_chunks, format_context_for_llm
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # Cached resources — persist across warm Lambda invocations
-# ---------------------------------------------------------------------------
-_anthropic_client = None
+_bedrock_client = None
 _system_prompts = {}
 
+S3_BUCKET = os.getenv("BOT_DATA_BUCKET", "bot-factory-data")
 
-_bedrock_client = None
+
+# ---------------------------------------------------------------------------
+# Bedrock client
+# ---------------------------------------------------------------------------
 
 
 def get_bedrock_client():
+    """Lazy-init Bedrock runtime client. Always uses real AWS."""
     global _bedrock_client
     if _bedrock_client is None:
         t_start = time.time()
         logger.info("[chatbot] Initializing Bedrock client...")
-        try:
-            config = configparser.ConfigParser()
-            config.read("/root/.aws/credentials")
-            _bedrock_client = boto3.client(
-                "bedrock-runtime",
-                region_name="us-east-1",
-                endpoint_url=os.getenv("BEDROCK_ENDPOINT_URL"),
-                aws_access_key_id=config.get("default", "aws_access_key_id"),
-                aws_secret_access_key=config.get("default", "aws_secret_access_key"),
-            )
-            logger.info(f"[chatbot] Bedrock init via credentials file — {time.time() - t_start:.3f}s")
-        except Exception:
-            _bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
-            logger.info(f"[chatbot] Bedrock init via IAM role — {time.time() - t_start:.3f}s")
+        _bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
+        logger.info(f"[chatbot] Bedrock init — {time.time() - t_start:.3f}s")
     return _bedrock_client
+
+
+# ---------------------------------------------------------------------------
+# S3 client
+# ---------------------------------------------------------------------------
+
+
+def get_s3_client():
+    """Get S3 client. Uses LocalStack for local, real AWS for production."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
+
+    return boto3.client(
+        "s3",
+        endpoint_url="http://localstack:4566",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prompt loader
+# ---------------------------------------------------------------------------
 
 
 def load_system_prompt(bot_id: str) -> str:
     """
-    Load and cache the system prompt for a bot.
-    Reads from bots/{bot_id}/prompt.md and injects current date.
+    Load and cache the system prompt for a bot from S3.
+    Reads from s3://bot-factory-data/bots/{bot_id}/prompt.yml
     """
-
     if bot_id in _system_prompts:
         return _system_prompts[bot_id]
 
-    prompt_path = Path(__file__).parent.parent / "bots" / bot_id / "prompt.yml"
+    s3_key = f"bots/{bot_id}/prompt.yml"
+    logger.info(f"[chatbot:{bot_id}] Loading prompt from s3://{S3_BUCKET}/{s3_key}")
 
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"No prompt.yml found for bot '{bot_id}' at {prompt_path}")
+    s3 = get_s3_client()
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+    data = yaml.safe_load(obj["Body"].read().decode("utf-8"))
 
-    with open(prompt_path, "r") as f:
-        data = yaml.safe_load(f)
+    template = data.get("system_prompt", "")
 
-    template = data.get("prompt", "")
-
-    # Inject current date
     current_date = datetime.now().strftime("%B %d, %Y")
-    prompt = template.format(current_date=current_date)
+    try:
+        prompt = template.format(current_date=current_date)
+    except KeyError:
+        prompt = template  # prompt has no format vars, use as-is
 
     _system_prompts[bot_id] = prompt
+    logger.info(f"[chatbot:{bot_id}] Prompt loaded and cached ({len(prompt)} chars)")
     return prompt
+
+
+# ---------------------------------------------------------------------------
+# Response generation
+# ---------------------------------------------------------------------------
+
+
+def build_messages(user_message: str, context: str, conversation_history: list[dict]) -> list[dict]:
+    """Build the messages array for Bedrock converse."""
+    messages = []
+
+    for msg in conversation_history:
+        messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
+
+    user_content = f"""## Relevant Context:
+{context}
+
+## User Question:
+{user_message}
+
+Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. If you can't answer from the context, say so politely."""
+
+    messages.append({"role": "user", "content": [{"text": user_content}]})
+    return messages
 
 
 def generate_response(
@@ -91,49 +126,23 @@ def generate_response(
     """
     Generate a response using RAG for a specific bot.
 
-    Args:
-        bot_id: Which bot is responding
-        user_message: The user's question
-        conversation_history: Previous messages (optional)
-        top_k: Number of chunks to retrieve
-        similarity_threshold: Minimum similarity for retrieval
-
     Returns:
         dict with 'response' text and 'sources' list
     """
     if conversation_history is None:
         conversation_history = []
 
-    # Retrieve relevant context for this bot
     relevant_chunks = retrieve_relevant_chunks(
-        bot_id=bot_id, query=user_message, top_k=top_k, similarity_threshold=similarity_threshold
+        bot_id=bot_id,
+        query=user_message,
+        top_k=top_k,
+        similarity_threshold=similarity_threshold,
     )
 
-    # Format context for the prompt
     context = format_context_for_llm(relevant_chunks)
-
-    # Build messages array
-    messages = []
-
-    # Add conversation history
-    for msg in conversation_history:
-        messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
-
-    # Add current user message with context
-    user_content = f"""## Relevant Context:
-{context}
-
-## User Question:
-{user_message}
-
-Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. If you can't answer from the context, say so politely."""
-
-    messages.append({"role": "user", "content": [{"text": user_content}]})
-
-    # Load this bot's system prompt
+    messages = build_messages(user_message, context, conversation_history)
     system_prompt = load_system_prompt(bot_id)
 
-    # Call Claude
     client = get_bedrock_client()
     response = client.converse(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -144,7 +153,7 @@ Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY 
 
     return {
         "response": response["output"]["message"]["content"][0]["text"],
-        "sources": [{"category": chunk["category"], "similarity": chunk["similarity"]} for chunk in relevant_chunks],
+        "sources": [{"category": c["category"], "similarity": c["similarity"]} for c in relevant_chunks],
     }
 
 
@@ -155,34 +164,21 @@ def generate_response_stream(
     similarity_threshold: float,
     conversation_history: list[dict] = None,
 ):
-    """
-    Same as generate_response, but yields text chunks for streaming.
-    """
+    """Same as generate_response, but yields text chunks for streaming."""
     logger.info(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'")
 
     if conversation_history is None:
         conversation_history = []
 
     relevant_chunks = retrieve_relevant_chunks(
-        bot_id=bot_id, query=user_message, top_k=top_k, similarity_threshold=similarity_threshold
+        bot_id=bot_id,
+        query=user_message,
+        top_k=top_k,
+        similarity_threshold=similarity_threshold,
     )
 
     context = format_context_for_llm(relevant_chunks)
-
-    messages = []
-    for msg in conversation_history:
-        messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
-
-    user_content = f"""## Relevant Context:
-{context}
-
-## User Question:
-{user_message}
-
-Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. If you can't answer from the context, say so politely."""
-
-    messages.append({"role": "user", "content": [{"text": user_content}]})
-
+    messages = build_messages(user_message, context, conversation_history)
     system_prompt = load_system_prompt(bot_id)
 
     client = get_bedrock_client()

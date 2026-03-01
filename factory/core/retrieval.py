@@ -4,9 +4,6 @@ Retrieval Module (Parameterized)
 Performs semantic search against stored embeddings in DynamoDB,
 scoped by bot_id. Each bot's embeddings are cached separately
 in memory for warm Lambda reuse.
-
-Same math as ai/retrieval.py — cosine similarity, top-K, threshold.
-Only difference: everything is filtered by bot_id.
 """
 
 import os
@@ -21,35 +18,26 @@ logger = logging.getLogger(__name__)
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
 
-# ---------------------------------------------------------------------------
-# Per-bot embedding cache — keyed by bot_id
-# Survives across warm Lambda invocations
-# ---------------------------------------------------------------------------
+# Per-bot embedding cache — survives across warm Lambda invocations
 _embeddings_cache = {}
 
 
 def get_dynamodb_connection():
-    """Get DynamoDB connection (works with LocalStack or AWS)."""
-    endpoint_url = os.getenv("AWS_ENDPOINT_URL", "")
+    """Get DynamoDB connection. Uses LocalStack for local, real AWS for production."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
-    if endpoint_url == "":
-        return boto3.resource("dynamodb", region_name="us-east-1")
-    else:
-        return boto3.resource(
-            "dynamodb",
-            endpoint_url=endpoint_url,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
-        )
+    return boto3.resource(
+        "dynamodb",
+        endpoint_url="http://localstack:4566",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
 
 def get_cached_embeddings(bot_id: str) -> list[dict]:
-    """
-    Load and cache embeddings for a specific bot.
-    Only returns rows where bot_id matches.
-    """
-
+    """Load and cache embeddings for a specific bot."""
     if bot_id in _embeddings_cache:
         logger.info(f"[retrieval:{bot_id}] cache HIT — {len(_embeddings_cache[bot_id])} items")
         return _embeddings_cache[bot_id]
@@ -70,15 +58,11 @@ def get_cached_embeddings(bot_id: str) -> list[dict]:
         pages += 1
 
     t_scan = time.time() - t_start
-    logger.info(
-        f"[retrieval:{bot_id}] DynamoDB scan complete — {len(items)} total items, {pages} page(s), {t_scan:.3f}s"
-    )
+    logger.info(f"[retrieval:{bot_id}] DynamoDB scan — {len(items)} total items, {pages} page(s), {t_scan:.3f}s")
 
-    # Filter to this bot only
     bot_items = [item for item in items if item.get("bot_id") == bot_id]
-
     _embeddings_cache[bot_id] = bot_items
-    logger.info(f"[retrieval:{bot_id}] cached {len(bot_items)} embeddings (filtered from {len(items)} total)")
+    logger.info(f"[retrieval:{bot_id}] cached {len(bot_items)} embeddings")
     return bot_items
 
 
@@ -90,10 +74,10 @@ _bedrock_client = None
 
 
 def get_bedrock_client():
-    """Lazy-init Bedrock runtime client."""
+    """Lazy-init Bedrock runtime client. Always uses real AWS."""
     global _bedrock_client
     if _bedrock_client is None:
-        _bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+        _bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
     return _bedrock_client
 
 
@@ -123,59 +107,39 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 
 def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_threshold: float) -> list[dict]:
-    """
-    Retrieve the most relevant chunks for a user's query, scoped to a bot.
-    """
+    """Retrieve the most relevant chunks for a query, scoped to a bot."""
     logger.info(f"[retrieval:{bot_id}] query='{query[:60]}'")
 
-    # Convert question to embedding
     query_embedding = generate_query_embedding(query)
-
-    # Get this bot's cached embeddings
     items = get_cached_embeddings(bot_id)
 
-    # Log top scores for debugging
-    all_scores = []
-    for item in items:
-        stored_embedding = [float(x) for x in item["embedding"]]
-        similarity = cosine_similarity(query_embedding, stored_embedding)
-        all_scores.append((similarity, item.get("category", ""), item.get("heading", "")))
-    all_scores.sort(reverse=True)
-    for score, cat, heading in all_scores[:5]:
-        logger.debug(f"[retrieval:{bot_id}] top_score={score:.4f} | {cat}: {heading}")
-
-    # Calculate similarity for each chunk
     results = []
     for item in items:
         stored_embedding = [float(x) for x in item["embedding"]]
         similarity = cosine_similarity(query_embedding, stored_embedding)
 
         if similarity >= similarity_threshold:
-            results.append(
-                {
-                    "id": item["id"],
-                    "category": item.get("category", "General"),
-                    "heading": item.get("heading", ""),
-                    "text": item["text"],
-                    "similarity": float(similarity),
-                }
-            )
+            results.append({
+                "id": item["id"],
+                "category": item.get("category", "General"),
+                "heading": item.get("heading", ""),
+                "text": item["text"],
+                "similarity": float(similarity),
+            })
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
 
+    top = results[0]["similarity"] if results else "N/A"
     logger.info(
         f"[retrieval:{bot_id}] found={len(results)} above threshold={similarity_threshold} "
-        f"top_score={results[0]['similarity']:.4f if results else 'N/A'} "
-        f"returning top_{top_k}"
+        f"top_score={top} returning top_{top_k}"
     )
 
     return results[:top_k]
 
 
 def format_context_for_llm(chunks: list[dict]) -> str:
-    """
-    Format retrieved chunks into context string for Claude.
-    """
+    """Format retrieved chunks into context string for Claude."""
     if not chunks:
         return "No relevant information found."
 

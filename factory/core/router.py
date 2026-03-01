@@ -4,19 +4,16 @@ Router Factory
 Creates a FastAPI APIRouter for any bot given a bot_id.
 Each bot gets:
   - POST /{bot_id}/chat         Send a message, get a response
+  - POST /{bot_id}/chat/stream  Stream a response
   - GET  /{bot_id}/config       Frontend config (enabled, name, etc.)
   - GET  /{bot_id}/suggestions  Suggested starter questions
+  - GET  /{bot_id}/warmup       Preload embedding cache
 
 Usage in main.py:
-    from ai.factory.core.router import create_bot_router
-    app.include_router(create_bot_router("guitar"), prefix=prefix)
-
-Or let the factory auto-discover bots:
-    from ai.factory import factory_router
-    app.include_router(factory_router, prefix=prefix)
+    from factory.core.router import create_bot_router
+    app.include_router(create_bot_router("guitar"), prefix="/api")
 """
 
-import os
 import uuid
 import time
 import logging
@@ -37,30 +34,22 @@ logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
-    """A single message in the conversation history."""
-
     role: str
     content: str
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat endpoint."""
-
     message: str
     session_id: Optional[str] = None
     conversation_history: list[ChatMessage] = []
 
 
 class ChatResponse(BaseModel):
-    """Response model for chat endpoint."""
-
     response: str
     sources: list[dict] = []
 
 
 class BotConfigResponse(BaseModel):
-    """Response model for bot configuration."""
-
     enabled: bool
     name: str
     personality: str
@@ -71,15 +60,25 @@ class BotConfigResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_config_cache: dict = {}
+
 def load_bot_config(bot_id: str) -> dict:
-    """Load a bot's config.yml."""
-    config_path = Path(__file__).parent.parent / "bots" / bot_id / "config.yml"
+    """Load a bot's config.yml from S3, cached per bot."""
+    if bot_id in _config_cache:
+        return _config_cache[bot_id]
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"No config.yml found for bot '{bot_id}'")
+    import boto3
+    from .chatbot import get_s3_client, S3_BUCKET
 
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+    s3_key = f"bots/{bot_id}/config.yml"
+    logger.info(f"[router:{bot_id}] Loading config from s3://{S3_BUCKET}/{s3_key}")
+
+    s3 = get_s3_client()
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+    config = yaml.safe_load(obj["Body"].read().decode("utf-8"))
+
+    _config_cache[bot_id] = config
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +112,7 @@ def log_chat_interaction(bot_id: str, question: str, response: str, sources: lis
             }
         )
     except Exception as e:
-        print(f"Failed to log chat interaction for '{bot_id}': {e}")
+        logger.warning(f"Failed to log chat interaction for '{bot_id}': {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -122,31 +121,16 @@ def log_chat_interaction(bot_id: str, question: str, response: str, sources: lis
 
 
 def create_bot_router(bot_id: str) -> APIRouter:
-    """
-    Create a FastAPI router for a specific bot.
-
-    Args:
-        bot_id: The bot folder name (e.g., 'guitar')
-
-    Returns:
-        APIRouter with /chat, /config, and /suggestions endpoints
-    """
+    """Create a FastAPI router for a specific bot."""
     router = APIRouter(prefix=f"/{bot_id}", tags=[f"{bot_id} chatbot"])
 
     @router.post("/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """Send a message to this bot and get a response."""
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="Missing OpenAI API key")
-
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            raise HTTPException(status_code=503, detail="Missing Anthropic API key")
-
         if not request.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
 
         try:
-            # Load config for RAG settings
             config = load_bot_config(bot_id)
             rag_config = config.get("bot", {}).get("rag", {})
 
@@ -157,26 +141,25 @@ def create_bot_router(bot_id: str) -> APIRouter:
                 user_message=request.message,
                 conversation_history=[msg.model_dump() for msg in request.conversation_history],
                 top_k=rag_config.get("top_k", 5),
-                similarity_threshold=rag_config.get("similarity_threshold"),
+                similarity_threshold=rag_config.get("similarity_threshold", 0.3),
             )
 
-            # Log the interaction
             log_chat_interaction(
-                bot_id=bot_id, question=request.message, response=result["response"], sources=result["sources"]
+                bot_id=bot_id,
+                question=request.message,
+                response=result["response"],
+                sources=result["sources"],
             )
 
             return ChatResponse(response=result["response"], sources=result["sources"])
 
         except Exception as e:
-            print(f"Chatbot error ({bot_id}): {e}")
+            logger.error(f"Chatbot error ({bot_id}): {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Error processing your message")
 
     @router.post("/chat/stream")
     async def chat_stream(request: ChatRequest):
         """Send a message and stream the response."""
-        if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(status_code=503, detail="Missing OpenAI API key")
-
         if not request.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
 
@@ -192,14 +175,14 @@ def create_bot_router(bot_id: str) -> APIRouter:
                     user_message=request.message,
                     conversation_history=[msg.model_dump() for msg in request.conversation_history],
                     top_k=rag_config.get("top_k", 5),
-                    similarity_threshold=rag_config.get("similarity_threshold"),
+                    similarity_threshold=rag_config.get("similarity_threshold", 0.3),
                 ):
                     yield chunk
 
             return StreamingResponse(stream_generator(), media_type="text/plain")
 
         except Exception as e:
-            print(f"Chatbot stream error ({bot_id}): {e}")
+            logger.error(f"Chatbot stream error ({bot_id}): {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Error processing your message")
 
     @router.get("/config", response_model=BotConfigResponse)
@@ -208,14 +191,13 @@ def create_bot_router(bot_id: str) -> APIRouter:
         try:
             config = load_bot_config(bot_id)
             bot_config = config.get("bot", {})
-
             return BotConfigResponse(
                 enabled=bot_config.get("enabled", False),
                 name=bot_config.get("name", bot_id),
                 personality=bot_config.get("personality", "friendly"),
             )
         except Exception as e:
-            print(f"Config error ({bot_id}): {e}")
+            logger.warning(f"Config error ({bot_id}): {e}")
             return BotConfigResponse(enabled=False, name=bot_id, personality="friendly")
 
     @router.get("/suggestions")
@@ -237,25 +219,11 @@ def create_bot_router(bot_id: str) -> APIRouter:
             from .retrieval import get_cached_embeddings, _embeddings_cache
 
             cache_hit = bot_id in _embeddings_cache
-            logger.info(f"[warmup:{bot_id}] cache_hit={cache_hit}")
-
-            t_cache = time.time()
             embeddings = get_cached_embeddings(bot_id)
             t_cache_done = time.time()
 
-            logger.info(
-                f"[warmup:{bot_id}] cache_load={t_cache_done - t_cache:.3f}s "
-                f"items={len(embeddings)} "
-                f"was_cached={cache_hit}"
-            )
-
-            # Also pre-init the Bedrock client so it's ready for the first chat
             from .chatbot import get_bedrock_client
-
-            t_bedrock = time.time()
             get_bedrock_client()
-            t_bedrock_done = time.time()
-            logger.info(f"[warmup:{bot_id}] bedrock_init={t_bedrock_done - t_bedrock:.3f}s")
 
             t_total = time.time() - t_start
             logger.info(f"[warmup:{bot_id}] DONE total={t_total:.3f}s")
