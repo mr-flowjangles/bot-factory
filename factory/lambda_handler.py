@@ -21,8 +21,6 @@ logger.setLevel(logging.INFO)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
 def ok(body: dict) -> dict:
     return {
         "statusCode": 200,
@@ -49,11 +47,9 @@ def parse_body(event: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
-
-
 def handle_chat(event: dict) -> dict:
     body = parse_body(event)
-    bot_id  = body.get("bot_id")
+    bot_id = body.get("bot_id")
     message = body.get("message", "").strip()
     conversation_history = body.get("conversation_history", [])
 
@@ -66,7 +62,7 @@ def handle_chat(event: dict) -> dict:
         from factory.core.bot_utils import load_bot_config, log_chat_interaction
         from factory.core.chatbot import generate_response
 
-        config     = load_bot_config(bot_id)
+        config = load_bot_config(bot_id)
         rag_config = config.get("bot", {}).get("rag", {})
 
         result = generate_response(
@@ -94,7 +90,7 @@ def handle_chat(event: dict) -> dict:
 def handle_list_bots(event: dict) -> dict:
     try:
         bots_path = Path(__file__).parent.parent / "scripts" / "bots"
-        EXCLUDED  = {"TEMPLATE", "testbot"}
+        EXCLUDED = {"TEMPLATE", "testbot"}
 
         bots = []
         if bots_path.exists():
@@ -116,7 +112,6 @@ def handle_health(event: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
-
 ROUTES = {
     ("POST", "/chat"):   handle_chat,
     ("GET",  "/bots"):   handle_list_bots,
@@ -126,7 +121,7 @@ ROUTES = {
 
 def lambda_handler(event: dict, context) -> dict:
     method = event.get("requestContext", {}).get("http", {}).get("method", "")
-    path   = event.get("rawPath", "")
+    path = event.get("rawPath", "")
 
     logger.info(f"[lambda] {method} {path}")
 

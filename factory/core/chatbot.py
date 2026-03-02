@@ -7,7 +7,6 @@ caches it per bot_id for warm Lambda reuse.
 """
 
 import os
-import json
 import time
 import logging
 import yaml
