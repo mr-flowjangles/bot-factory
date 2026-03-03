@@ -2,7 +2,7 @@
 Embedding Generator (Universal)
 
 Reads a bot's data via the chunker, generates embeddings via AWS Bedrock
-(Amazon Titan Text Embeddings V2), and stores them in the ChatbotRAG
+(Amazon Titan Text Embeddings V2), and stores them in the BotFactoryRAG
 DynamoDB table with a bot_id field.
 
 Uses kill-and-fill scoped to the bot_id — only deletes and rewrites
@@ -122,7 +122,7 @@ def clear_bot_embeddings(table, bot_id: str):
 
 def store_embeddings(table, chunks: list[dict]):
     """Write chunks with embeddings to DynamoDB."""
-    print(f"\nStoring {len(chunks)} embeddings in ChatbotRAG...")
+    print(f"\nStoring {len(chunks)} embeddings in BotFactoryRAG...")
 
     with table.batch_writer() as batch:
         for chunk in chunks:
@@ -178,18 +178,16 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
     print(f"  Environment: {env}")
     print("=" * 60 + "\n")
 
-    # Step 1: Connect to DynamoDB
-    dynamodb = get_dynamodb_connection()
-    table = dynamodb.Table("ChatbotRAG")
-
-    # Step 2: Check if embeddings already exist
-    if bot_embeddings_exist(table, bot_id):
-        if not force:
-            answer = input(f"Embeddings already exist for '{bot_id}'. Regenerate? (y/n): ").strip().lower()
-            if answer != "y":
-                print("  Skipping — existing embeddings unchanged.")
-                return
-        print(f"  Regenerating embeddings for '{bot_id}'...")
+def get_dynamodb_connection():
+    if os.getenv("APP_ENV", "local") == "production":
+        return boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return boto3.resource(
+        "dynamodb",
+        endpoint_url=os.getenv("LOCALSTACK_ENDPOINT", "http://localstack:4566"),
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
     # Step 3: Load and chunk the bot's data
     chunks = load_bot_data(bot_id)
@@ -222,7 +220,7 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
     print(f"  Total:      {len(chunks)} embeddings")
     for cat, count in cats.most_common():
         print(f"    {cat}: {count}")
-    print(f"  Table:      ChatbotRAG (bot_id='{bot_id}')")
+    print(f"  Table:      BotFactoryRAG (bot_id='{bot_id}')")
     print()
 
 

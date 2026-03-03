@@ -17,6 +17,7 @@ env/
 .env.local
 .env.*.local
 _scratch/
+sam-env.json
 
 # AWS
 *.zip

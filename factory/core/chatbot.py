@@ -7,7 +7,6 @@ caches it per bot_id for warm Lambda reuse.
 """
 
 import os
-import json
 import time
 import logging
 import yaml
@@ -46,13 +45,11 @@ def get_bedrock_client():
 
 
 def get_s3_client():
-    """Get S3 client. Uses LocalStack for local, real AWS for production."""
     if os.getenv("APP_ENV", "local") == "production":
         return boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
-
     return boto3.client(
         "s3",
-        endpoint_url="http://localstack:4566",
+        endpoint_url=os.getenv("LOCALSTACK_ENDPOINT", "http://localstack:4566"),
         region_name=os.getenv("AWS_REGION", "us-east-1"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),

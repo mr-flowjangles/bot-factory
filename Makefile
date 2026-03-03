@@ -1,7 +1,8 @@
 .PHONY: up down build rebuild restart logs logs-api logs-ls ps clean nuke \
         s3-ls s3-upload s3-sync s3-mb \
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items \
-        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod help
+        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod \
+        init sam-local help
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -10,7 +11,7 @@ ENDPOINT    = http://localhost:4566
 S3_BUCKET   = s3://bot-factory-data
 AWS_FLAGS   = --endpoint-url=$(ENDPOINT)
 AWS         = AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 aws $(AWS_FLAGS)
-TABLE       ?= ChatbotRAG
+TABLE       ?= BotFactoryRAG
 
 # ─────────────────────────────────────────────────────────────
 # Help
@@ -23,7 +24,9 @@ help:
 	@echo ""
 	@echo "  Docker"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "up"                           "Start all containers"
+	@printf "  %-38s %s\n" "up"                           "Start all containers + run init"
+	@printf "  %-38s %s\n" "init"                         "Re-run S3 init (after bounce)"
+	@printf "  %-38s %s\n" "sam-local"                    "Start SAM local API on port 3000"
 	@printf "  %-38s %s\n" "down"                         "Stop all containers"
 	@printf "  %-38s %s\n" "build"                        "Build containers"
 	@printf "  %-38s %s\n" "rebuild"                      "Full rebuild from scratch"
@@ -51,7 +54,7 @@ help:
 	@echo "  DynamoDB (Local)"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "dynamo-ls"                    "List all tables"
-	@printf "  %-38s %s\n" "dynamo-count"                 "Item count (default: ChatbotRAG)"
+	@printf "  %-38s %s\n" "dynamo-count"                 "Item count (default: BotFactoryRAG)"
 	@printf "  %-38s %s\n" "dynamo-scan"                  "Scan all items in a table"
 	@printf "  %-38s %s\n" "dynamo-scan-bot bot={bot_id}" "Scan items for a specific bot"
 	@printf "  %-38s %s\n" "dynamo-get pk={bot_id}_0"     "Get a single item by pk"
@@ -89,6 +92,23 @@ help:
 ## up: Start all containers
 up:
 	docker compose up -d
+	@echo "Waiting for LocalStack to be ready..."
+	@sleep 5
+	$(MAKE) s3-init
+
+## init: Re-run S3 and bot init (useful after bounce)
+init:
+	$(MAKE) s3-init
+
+## sam-local: Start SAM local API connected to bot-factory network
+sam-local:
+	@LOCALSTACK_IP=$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' bot-factory-localstack-1) && \
+	echo "LocalStack IP: $$LOCALSTACK_IP" && \
+	sam local start-api \
+	  --docker-network bot-factory_net \
+	  --add-host localstack:$$LOCALSTACK_IP \
+	  --profile default \
+	  --port 3000
 
 ## down: Stop all containers
 down:
@@ -179,7 +199,7 @@ s3-init:
 dynamo-ls:
 	$(AWS) dynamodb list-tables
 
-## dynamo-count: Item count for a table (default: ChatbotRAG)
+## dynamo-count: Item count for a table (default: BotFactoryRAG)
 dynamo-count:
 	$(AWS) dynamodb scan \
 	  --table-name $(TABLE) \
