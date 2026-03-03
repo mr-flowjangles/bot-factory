@@ -1,14 +1,3 @@
-#!/bin/bash
-# =============================================================================
-# init-dynamodb.sh
-#
-# Creates required DynamoDB tables.
-# Works with both LocalStack (local dev) and real AWS.
-#
-# Local dev:  run automatically via docker-compose
-# AWS:        run once manually: ./scripts/init-dynamodb.sh --aws
-# =============================================================================
-
 set -e
 
 # ── Mode detection ─────────────────────────────────────────────────────────────
@@ -44,20 +33,19 @@ create_table() {
 # ── Tables ─────────────────────────────────────────────────────────────────────
 
 # Stores embeddings for all bots (partitioned by bot_id field)
-create_table ChatbotRAG \
+create_table BotFactoryRAG \
     --attribute-definitions AttributeName=id,AttributeType=S \
     --key-schema AttributeName=id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST
 
 # Stores conversation history per session
-create_table ChatHistory \
+create_table BotFactoryHistory \
     --attribute-definitions AttributeName=session_id,AttributeType=S \
     --key-schema AttributeName=session_id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST
 
-
 # Stores chat interaction logs
-create_table ChatbotLogs \
+create_table BotFactoryLogs \
     --attribute-definitions AttributeName=id,AttributeType=S \
     --key-schema AttributeName=id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST

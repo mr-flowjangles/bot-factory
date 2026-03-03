@@ -1,0 +1,13 @@
+{
+  "rawPath": "/chat",
+  "requestContext": {
+    "http": {
+      "method": "POST"
+    }
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"bot_id\": \"fret-detective\", \"message\": \"What is a G chord?\"}",
+  "isBase64Encoded": false
+}

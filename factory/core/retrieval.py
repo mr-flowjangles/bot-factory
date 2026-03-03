@@ -43,7 +43,7 @@ def get_cached_embeddings(bot_id: str) -> list[dict]:
     t_start = time.time()
 
     dynamodb = get_dynamodb_connection()
-    table = dynamodb.Table("ChatbotRAG")
+    table = dynamodb.Table("BotFactoryRAG")
 
     response = table.scan()
     items = response.get("Items", [])
@@ -71,9 +71,12 @@ _bedrock_client = None
 
 
 def get_bedrock_client():
-    """Lazy-init Bedrock runtime client. Always uses real AWS."""
     global _bedrock_client
     if _bedrock_client is None:
+        session = boto3.Session()
+        creds = session.get_credentials()
+        print(f"[bedrock] resolved credentials: {creds}")
+        print(f"[bedrock] bearer token env: {os.getenv('AWS_BEARER_TOKEN_BEDROCK', 'NOT SET')}")
         _bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
     return _bedrock_client
 

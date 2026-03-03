@@ -60,12 +60,12 @@ def load_bot_config(bot_id: str) -> dict:
 
 
 def log_chat_interaction(bot_id: str, question: str, response: str, sources: list[dict]):
-    """Log chat interaction to DynamoDB ChatbotLogs table."""
+    """Log chat interaction to DynamoDB BotFactoryLogs table."""
     try:
         from .retrieval import get_dynamodb_connection
 
         dynamodb = get_dynamodb_connection()
-        table = dynamodb.Table("ChatbotLogs")
+        table = dynamodb.Table("BotFactoryLogs")
 
         clean_sources = [
             {

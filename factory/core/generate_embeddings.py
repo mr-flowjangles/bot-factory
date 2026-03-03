@@ -2,7 +2,7 @@
 Embedding Generator (Universal)
 
 Reads a bot's data via the chunker, generates embeddings via AWS Bedrock
-(Amazon Titan Text Embeddings V2), and stores them in the ChatbotRAG
+(Amazon Titan Text Embeddings V2), and stores them in the BotFactoryRAG
 DynamoDB table with a bot_id field.
 
 Uses kill-and-fill scoped to the bot_id — only deletes and rewrites
@@ -122,7 +122,7 @@ def clear_bot_embeddings(table, bot_id: str):
 
 def store_embeddings(table, chunks: list[dict]):
     """Write chunks with embeddings to DynamoDB."""
-    print(f"\nStoring {len(chunks)} embeddings in ChatbotRAG...")
+    print(f"\nStoring {len(chunks)} embeddings in BotFactoryRAG...")
 
     with table.batch_writer() as batch:
         for chunk in chunks:
@@ -220,7 +220,7 @@ def get_dynamodb_connection():
     print(f"  Total:      {len(chunks)} embeddings")
     for cat, count in cats.most_common():
         print(f"    {cat}: {count}")
-    print(f"  Table:      ChatbotRAG (bot_id='{bot_id}')")
+    print(f"  Table:      BotFactoryRAG (bot_id='{bot_id}')")
     print()
 
 
