@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Bot Factory Lambda
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        APP_ENV: local
+
+Parameters:
+  AppEnv:
+    Type: String
+    Default: local
+    AllowedValues: [local, production]
+
+Resources:
+  BotFactoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: factory.lambda_handler.lambda_handler
+      Runtime: python3.12
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            Path: /health
+            Method: GET
+        ListBots:
+          Type: HttpApi
+          Properties:
+            Path: /bots
+            Method: GET
+        Chat:
+          Type: HttpApi
+          Properties:
+            Path: /chat
+            Method: POST

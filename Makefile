@@ -1,7 +1,8 @@
 .PHONY: up down build rebuild restart logs logs-api logs-ls ps clean nuke \
         s3-ls s3-upload s3-sync s3-mb \
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items \
-        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod help
+        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod \
+        init sam-local help
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -23,7 +24,9 @@ help:
 	@echo ""
 	@echo "  Docker"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "up"                           "Start all containers"
+	@printf "  %-38s %s\n" "up"                           "Start all containers + run init"
+	@printf "  %-38s %s\n" "init"                         "Re-run S3 init (after bounce)"
+	@printf "  %-38s %s\n" "sam-local"                    "Start SAM local API on port 3000"
 	@printf "  %-38s %s\n" "down"                         "Stop all containers"
 	@printf "  %-38s %s\n" "build"                        "Build containers"
 	@printf "  %-38s %s\n" "rebuild"                      "Full rebuild from scratch"
@@ -89,6 +92,17 @@ help:
 ## up: Start all containers
 up:
 	docker compose up -d
+	@echo "Waiting for LocalStack to be ready..."
+	@sleep 5
+	$(MAKE) s3-init
+
+## init: Re-run S3 and bot init (useful after bounce)
+init:
+	$(MAKE) s3-init
+
+## sam-local: Start SAM local API connected to bot-factory network
+sam-local:
+	sam local start-api --docker-network bot-factory_net --port 3000
 
 ## down: Stop all containers
 down:

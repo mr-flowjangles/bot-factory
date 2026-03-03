@@ -13,7 +13,7 @@ services:
     volumes:
       - ./app:/usr/share/nginx/html:ro
     networks:
-      - bot-factory-net
+      - net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost"]
       interval: 30s
@@ -32,11 +32,9 @@ services:
     volumes:
       - .:/app
       - ~/.aws:/root/.aws:ro
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn factory.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
-      - bot-factory-net
+      - net
     ports:
       - "8000:8000"
     healthcheck:
@@ -60,7 +58,7 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack-data:/var/lib/localstack"
     networks:
-      - bot-factory-net
+      - net
 
   init-dynamodb:
     image: amazon/aws-cli
@@ -73,7 +71,7 @@ services:
     volumes:
       - ./scripts:/scripts
     networks:
-      - bot-factory-net
+      - net
     entrypoint: ["/scripts/init-dynamodb.sh"]
 
   init-s3:
@@ -85,7 +83,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=us-east-1
     networks:
-      - bot-factory-net
+      - net
     entrypoint:
       - /bin/sh
       - -c
@@ -99,5 +97,5 @@ services:
         echo "S3 bucket ready."
 
 networks:
-  bot-factory-net:
+  net:
     driver: bridge
