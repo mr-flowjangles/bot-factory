@@ -14,7 +14,7 @@
 
 A serverless portfolio site with an embedded AI chatbot platform. The frontend is static HTML/CSS/JS hosted on S3 and served via CloudFront. The backend is a FastAPI app running in AWS Lambda, connected to DynamoDB and S3, with AI powered by AWS Bedrock.
 
-**This project is still in Beta, engineering continues.  this will be removed when complete**
+**This project is still in Beta, and engineering continues.  this will be removed when complete**
 
 **CURRENT STATUS**
 Running locally within `docker` and `chalice`
