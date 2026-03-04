@@ -16,6 +16,14 @@ A serverless portfolio site with an embedded AI chatbot platform. The frontend i
 
 **This project is still in Beta, engineering continues.  this will be removed when complete**
 
+**CURRENT STATUS**
+Running locally within `docker` and `chalice`
+Embeddings are done in AWS Bedrock via Titan
+No vector DB, using Dynamo and memory to store embeddings per bot
+
+Next Steps
+- Deploy to AWS
+
 ## Architecture
 
 ```
