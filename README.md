@@ -2,7 +2,7 @@
   <img src="app/img/bot-factory.png" alt="Bot Factory Logo" width="200">
 </p>
 
-<h1 align="center">Bot Factory UI</h1>
+<h1 align="center">Bot Factory</h1>
 
 <p align="center">
   A lightweight template for building chatbot interfaces.<br>
@@ -14,13 +14,15 @@
 
 A serverless portfolio site with an embedded AI chatbot platform. The frontend is static HTML/CSS/JS hosted on S3 and served via CloudFront. The backend is a FastAPI app running in AWS Lambda, connected to DynamoDB and S3, with AI powered by AWS Bedrock.
 
+**This project is still in Beta, engineering continues.  this will be removed when complete**
+
 ## Architecture
 
 ```
 Browser
   → CloudFront
     → S3 (static frontend: HTML, JS, CSS, assets)
-    → API Gateway → Lambda (FastAPI backend)
+    → API Gateway → Lambda (Python)
                       → DynamoDB (embeddings, session data)
                       → S3 (bot knowledge data)
                       → Bedrock (embeddings + Claude responses)
