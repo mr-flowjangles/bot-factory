@@ -1,4 +1,16 @@
-# aws-serverless-resume
+<p align="center">
+  <img src="app/img/bot-factory.png" alt="Bot Factory Logo" width="200">
+</p>
+
+<h1 align="center">Bot Factory UI</h1>
+
+<p align="center">
+  A lightweight template for building chatbot interfaces.<br>
+  Fork it, configure it, and connect it to your own backend.
+</p>
+
+
+# BOT-FACTORY
 
 A serverless portfolio site with an embedded AI chatbot platform. The frontend is static HTML/CSS/JS hosted on S3 and served via CloudFront. The backend is a FastAPI app running in AWS Lambda, connected to DynamoDB and S3, with AI powered by AWS Bedrock.
 
