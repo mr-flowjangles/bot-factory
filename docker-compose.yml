@@ -8,37 +8,12 @@ services:
       - .env
     ports:
       - "8080:80"
-    depends_on:
-      - api
     volumes:
       - ./app:/usr/share/nginx/html:ro
     networks:
       - net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  api:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    image: bot-factory-api
-    env_file:
-      - .env
-    depends_on:
-      - localstack
-    volumes:
-      - .:/app
-      - ~/.aws:/root/.aws:ro
-    command: uvicorn factory.main:app --host 0.0.0.0 --port 8000 --reload
-    networks:
-      - net
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
