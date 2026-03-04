@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "app_name": "bot-factory",
+  "stages": {
+    "dev": {
+      "environment_variables": {
+        "LOCALSTACK_ENDPOINT": "http://localhost:4566",
+        "APP_ENV": "local"
+      }
+    },
+    "production": {
+      "environment_variables": {
+        "APP_ENV": "production"
+      }
+    }
+  }
+}

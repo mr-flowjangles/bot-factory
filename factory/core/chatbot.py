@@ -49,7 +49,7 @@ def get_s3_client():
         return boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
     return boto3.client(
         "s3",
-        endpoint_url=os.getenv("LOCALSTACK_ENDPOINT", "http://localstack:4566"),
+        endpoint_url=os.getenv("LOCALSTACK_ENDPOINT", "http://localhost:4566"),
         region_name=os.getenv("AWS_REGION", "us-east-1"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
@@ -120,14 +120,10 @@ def generate_response(
     similarity_threshold: float,
     conversation_history: list[dict] = None,
 ) -> dict:
-    """
-    Generate a response using RAG for a specific bot.
-
-    Returns:
-        dict with 'response' text and 'sources' list
-    """
     if conversation_history is None:
         conversation_history = []
+
+    t0 = time.time()
 
     relevant_chunks = retrieve_relevant_chunks(
         bot_id=bot_id,
@@ -135,10 +131,12 @@ def generate_response(
         top_k=top_k,
         similarity_threshold=similarity_threshold,
     )
+    t1 = time.time()
 
     context = format_context_for_llm(relevant_chunks)
     messages = build_messages(user_message, context, conversation_history)
     system_prompt = load_system_prompt(bot_id)
+    t2 = time.time()
 
     client = get_bedrock_client()
     response = client.converse(
@@ -147,6 +145,9 @@ def generate_response(
         system=[{"text": system_prompt}],
         messages=messages,
     )
+    t3 = time.time()
+
+    logger.info(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock={t3-t2:.3f}s | total={t3-t0:.3f}s")
 
     return {
         "response": response["output"]["message"]["content"][0]["text"],

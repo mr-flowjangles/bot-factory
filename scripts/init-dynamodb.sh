@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 
 # ── Mode detection ─────────────────────────────────────────────────────────────
@@ -6,11 +7,11 @@ if [[ "$1" == "--aws" ]]; then
     AWS_ARGS=""
     echo "Mode: AWS"
 else
-    ENDPOINT="http://localstack:4566"
+    ENDPOINT="${LOCALSTACK_ENDPOINT:-http://localstack:4566}"
     AWS_ARGS="--endpoint-url=$ENDPOINT"
     echo "Mode: LOCAL (LocalStack @ $ENDPOINT)"
     echo "Waiting for LocalStack to be ready..."
-    sleep 5
+    sleep 3
 fi
 
 REGION="us-east-1"
@@ -34,8 +35,8 @@ create_table() {
 
 # Stores embeddings for all bots (partitioned by bot_id field)
 create_table BotFactoryRAG \
-    --attribute-definitions AttributeName=id,AttributeType=S \
-    --key-schema AttributeName=id,KeyType=HASH \
+    --attribute-definitions AttributeName=pk,AttributeType=S \
+    --key-schema AttributeName=pk,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST
 
 # Stores conversation history per session
