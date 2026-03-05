@@ -17,7 +17,7 @@ env/
 .env.local
 .env.*.local
 _scratch/
-sam-env.json
+
 
 # AWS
 *.zip
@@ -47,3 +47,4 @@ logs/
 bots/guitar/data/*
 # ...but allow a placeholder file so the directory is kept in git
 !bots/guitar/data/.gitkeep
+.chalice/config.json
