@@ -1,19 +1,19 @@
-output "frontend_bucket_name" {
-  value       = aws_s3_bucket.frontend.bucket
-  description = "S3 bucket serving frontend files"
+output "bucket_name" {
+  description = "S3 bucket name — set this as S3_BUCKET in your .env"
+  value       = aws_s3_bucket.bot_factory.id
 }
 
-output "data_bucket_name" {
-  value       = aws_s3_bucket.bot_data.bucket
-  description = "S3 bucket storing bot prompts and data"
+output "rag_table_name" {
+  description = "DynamoDB RAG table name"
+  value       = aws_dynamodb_table.rag.name
 }
 
-output "lambda_function_name" {
-  value       = aws_lambda_function.api.function_name
-  description = "Lambda function hosting the API"
+output "logs_table_name" {
+  description = "DynamoDB logs table name"
+  value       = aws_dynamodb_table.logs.name
 }
 
-output "cloudfront_domain_name" {
-  value       = try(aws_cloudfront_distribution.frontend[0].domain_name, null)
-  description = "CloudFront domain for frontend bucket (if enabled)"
+output "lambda_exec_role_arn" {
+  description = "IAM role ARN — Chalice will use this for Lambda"
+  value       = aws_iam_role.lambda_exec.arn
 }

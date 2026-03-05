@@ -362,30 +362,69 @@
     showTyping();
 
     const t0 = performance.now();
+    const base = apiUrlInput.value.replace(/\/$/, '');
+    const bot_id = botIdInput.value.trim();
 
     try {
-      const res = await fetch(apiUrlInput.value.replace(/\/$/, '') + '/chat', {
+      const res = await fetch(base + '/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bot_id: botIdInput.value.trim(),
-          message: text
-        })
+        body: JSON.stringify({ bot_id, message: text })
       });
 
-      const data = await res.json();
-      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
-
-      hideTyping();
-
-      if (data.error) {
-        addMsg(`Error: ${data.error}`, 'bot');
-      } else {
-        addMsg(data.response, 'bot', data.sources);
+      if (!res.ok) {
+        const err = await res.json();
+        hideTyping();
+        addMsg(`Error: ${err.error || res.statusText}`, 'bot');
+        statusDot.classList.remove('ok');
+        sendBtn.disabled = false;
+        msgInput.focus();
+        return;
       }
 
+      // Create the bot message bubble now so we can stream into it
+      hideTyping();
+      const botDiv = document.createElement('div');
+      botDiv.className = 'msg bot';
+      chatArea.appendChild(botDiv);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+      let firstToken = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse complete SSE lines from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') continue;
+
+          try {
+            const { token } = JSON.parse(payload);
+            if (!firstToken) {
+              firstToken = true;
+            }
+            fullText += token;
+            botDiv.textContent = fullText;
+            chatArea.scrollTop = chatArea.scrollHeight;
+          } catch { /* malformed line, skip */ }
+        }
+      }
+
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
       lastTiming.textContent = `${elapsed}s`;
       statusDot.classList.add('ok');
+
     } catch (err) {
       hideTyping();
       addMsg(`Connection error: ${err.message}`, 'bot');
