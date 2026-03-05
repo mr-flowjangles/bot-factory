@@ -21,10 +21,6 @@ help:
 	@echo ""
 	@echo "Bot Factory — Available Commands"
 	@echo "════════════════════════════════════════════════════════════"
-	@echo "  Dev Credentials"
-	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "dev-creds"                    "Fetch short-lived AWS creds from Lambda"
-	@echo ""
 	@echo "  Docker"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "up"                           "Start all containers + run init"
@@ -88,13 +84,6 @@ help:
 	@printf "  %-38s %s\n" "nuke"                         "Full reset — removes everything including LocalStack data"
 	@echo ""
 
-
-# ─────────────────────────────────────────────────────────────
-# dev-creds
-# ─────────────────────────────────────────────────────────────
-
-dev-creds:
-	@export $$(grep -v '^#' .env | xargs) && python3 scripts/get_dev_creds.py
 
 # ─────────────────────────────────────────────────────────────
 # Docker Compose

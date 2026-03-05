@@ -12,7 +12,6 @@
 #   LAMBDA_FUNCTION_NAME   e.g. bot-factory-embed
 #   AWS_REGION             e.g. us-east-1
 #   BOT_DATA_BUCKET        S3 bucket where YAML files live
-#   OPENAI_API_KEY         your OpenAI key (stored in Lambda env)
 # =============================================================================
 
 set -e
@@ -47,7 +46,7 @@ touch "$BUILD_DIR/factory/core/__init__.py"
 
 # ── Install dependencies ───────────────────────────────────────────────────────
 echo "Installing dependencies..."
-pip install openai boto3 pyyaml --target "$BUILD_DIR" --quiet
+pip install boto3 pyyaml --target "$BUILD_DIR" --quiet
 
 # ── Zip it up ─────────────────────────────────────────────────────────────────
 echo "Creating $ZIP_FILE..."
@@ -79,7 +78,7 @@ if aws lambda get-function --function-name "$FUNCTION_NAME" --region "$REGION" &
         --function-name "$FUNCTION_NAME" \
         --region "$REGION" \
         --handler "factory.core.generate_embeddings.lambda_handler" \
-        --environment "Variables={DATA_SOURCE=s3,BOT_DATA_BUCKET=$BUCKET,OPENAI_API_KEY=$OPENAI_API_KEY}" \
+        --environment "Variables={DATA_SOURCE=s3,BOT_DATA_BUCKET=$BUCKET}" \
         --timeout 300 \
         --memory-size 512 \
         --output json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  Config updated')"
