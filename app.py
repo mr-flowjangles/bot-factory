@@ -1,9 +1,11 @@
+import os
 from chalice import Chalice, Response
 from factory.core.chatbot import generate_response
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Chalice(app_name="bot-factory")
-
-import os
 
 @app.route("/", methods=["GET"])
 def index():
@@ -15,32 +17,6 @@ def index():
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}
-
-
-@app.route("/dev-creds", methods=["GET"])
-def dev_creds():
-    """
-    Return short-lived AWS credentials from the Lambda execution role.
-    Protected by X-Dev-Token header. For dev use only — never call from prod clients.
-    """
-    expected = os.getenv("DEV_TOKEN")
-    if not expected:
-        return Response(body={"error": "DEV_TOKEN not configured on Lambda"}, status_code=500)
-
-    token = app.current_request.headers.get("x-dev-token", "")
-    if token != expected:
-        return Response(body={"error": "Unauthorized"}, status_code=401)
-
-    import boto3
-    session = boto3.Session()
-    creds = session.get_credentials().get_frozen_credentials()
-
-    return {
-        "aws_access_key_id": creds.access_key,
-        "aws_secret_access_key": creds.secret_key,
-        "aws_session_token": creds.token,
-        "region": os.getenv("AWS_REGION", "us-east-1"),
-    }
 
 
 @app.route("/chat", methods=["POST"])
@@ -70,3 +46,30 @@ def chat():
         }
     except Exception as e:
         return Response(body={"error": str(e)}, status_code=500)
+    
+
+@app.route("/chat/stream", methods=["POST"])
+def chat_stream():
+    request = app.current_request
+    body = request.json_body
+    bot_id = body.get("bot_id")
+    message = body.get("message")
+    if not bot_id:
+        return Response(body='data: {"error":"bot_id is required"}\n\n', status_code=400, headers={"Content-Type": "text/event-stream"})
+    if not message:
+        return Response(body='data: {"error":"message is required"}\n\n', status_code=400, headers={"Content-Type": "text/event-stream"})
+    try:
+        result = generate_response(
+            bot_id=bot_id,
+            user_message=message,
+            top_k=5,
+            similarity_threshold=0.3,
+            conversation_history=[],
+        )
+        import json
+        body = "data: " + json.dumps({"token": result["response"]}) + "\n\ndata: [DONE]\n\n"
+        return Response(body=body, status_code=200, headers={"Content-Type": "text/event-stream"})
+    except Exception as e:
+        import json
+        body = "data: " + json.dumps({"error": str(e)}) + "\n\n"
+        return Response(body=body, status_code=500, headers={"Content-Type": "text/event-stream"})

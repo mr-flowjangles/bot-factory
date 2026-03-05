@@ -120,7 +120,7 @@ def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_thr
 
         if similarity >= similarity_threshold:
             results.append({
-                "id": item["id"],
+                "id": item["pk"],
                 "category": item.get("category", "General"),
                 "heading": item.get("heading", ""),
                 "text": item["text"],

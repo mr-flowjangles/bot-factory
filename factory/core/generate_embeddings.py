@@ -29,6 +29,7 @@ import json
 import boto3
 from decimal import Decimal
 from .chunker import load_bot_data
+from dotenv import load_dotenv
 
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
@@ -111,7 +112,7 @@ def clear_bot_embeddings(table, bot_id: str):
 
     with table.batch_writer() as batch:
         for item in bot_items:
-            batch.delete_item(Key={"id": item["id"]})
+            batch.delete_item(Key={"pk": item["pk"]})
 
     print("  Deleted {} existing embeddings".format(len(bot_items)))
 
@@ -123,7 +124,7 @@ def store_embeddings(table, chunks: list):
     with table.batch_writer() as batch:
         for chunk in chunks:
             item = {
-                "id": "{}_{}".format(chunk["bot_id"], chunk["id"]),
+                "pk": "{}_{}".format(chunk["bot_id"], chunk["id"]),
                 "bot_id": chunk["bot_id"],
                 "category": chunk["category"],
                 "heading": chunk["heading"],
@@ -208,6 +209,8 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 
 def main():
     """CLI entry point."""
+    load_dotenv()
+    
     if len(sys.argv) < 2:
         print("Usage: python -m factory.core.generate_embeddings <bot_id> [--force]")
         print("Example: python -m factory.core.generate_embeddings guitar")
