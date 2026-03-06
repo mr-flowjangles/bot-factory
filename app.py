@@ -50,7 +50,7 @@ def chat():
 
 # ─── Replace the existing /chat/stream route in app.py with this ───
 
-@app.route("/chat/stream", methods=["POST"])
+@app.route("/chat/stream", methods=["POST"], cors=True)
 def chat_stream():
     """
     SSE endpoint using real Bedrock streaming.
