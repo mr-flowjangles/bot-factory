@@ -4,6 +4,9 @@ Retrieval Module (Parameterized)
 Performs semantic search against stored embeddings in DynamoDB,
 scoped by bot_id. Each bot's embeddings are cached separately
 in memory for warm Lambda reuse.
+
+Uses a GSI on bot_id to query only that bot's items instead of
+scanning the entire table.
 """
 
 import os
@@ -12,11 +15,13 @@ import time
 import logging
 import boto3
 import numpy as np
+from boto3.dynamodb.conditions import Key
 
 logger = logging.getLogger(__name__)
 
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
+GSI_NAME = "bot_id-index"
 
 # Per-bot embedding cache — survives across warm Lambda invocations
 _embeddings_cache = {}
@@ -34,33 +39,41 @@ def get_dynamodb_connection():
 
 
 def get_cached_embeddings(bot_id: str) -> list[dict]:
-    """Load and cache embeddings for a specific bot."""
+    """Load and cache embeddings for a specific bot via GSI query."""
     if bot_id in _embeddings_cache:
         logger.info(f"[retrieval:{bot_id}] cache HIT — {len(_embeddings_cache[bot_id])} items")
         return _embeddings_cache[bot_id]
 
-    logger.info(f"[retrieval:{bot_id}] cache MISS — scanning DynamoDB...")
+    logger.info(f"[retrieval:{bot_id}] cache MISS — querying GSI...")
     t_start = time.time()
 
     dynamodb = get_dynamodb_connection()
     table = dynamodb.Table("BotFactoryRAG")
 
-    response = table.scan()
-    items = response.get("Items", [])
+    # Query the GSI — reads only this bot's items, not the whole table
+    items = []
+    response = table.query(
+        IndexName=GSI_NAME,
+        KeyConditionExpression=Key("bot_id").eq(bot_id),
+    )
+    items.extend(response.get("Items", []))
     pages = 1
 
     while "LastEvaluatedKey" in response:
-        response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+        response = table.query(
+            IndexName=GSI_NAME,
+            KeyConditionExpression=Key("bot_id").eq(bot_id),
+            ExclusiveStartKey=response["LastEvaluatedKey"],
+        )
         items.extend(response.get("Items", []))
         pages += 1
 
-    t_scan = time.time() - t_start
-    logger.info(f"[retrieval:{bot_id}] DynamoDB scan — {len(items)} total items, {pages} page(s), {t_scan:.3f}s")
+    t_query = time.time() - t_start
+    logger.info(f"[retrieval:{bot_id}] GSI query — {len(items)} items, {pages} page(s), {t_query:.3f}s")
 
-    bot_items = [item for item in items if item.get("bot_id") == bot_id]
-    _embeddings_cache[bot_id] = bot_items
-    logger.info(f"[retrieval:{bot_id}] cached {len(bot_items)} embeddings")
-    return bot_items
+    _embeddings_cache[bot_id] = items
+    logger.info(f"[retrieval:{bot_id}] cached {len(items)} embeddings")
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -73,10 +86,6 @@ _bedrock_client = None
 def get_bedrock_client():
     global _bedrock_client
     if _bedrock_client is None:
-        session = boto3.Session()
-        creds = session.get_credentials()
-        print(f"[bedrock] resolved credentials: {creds}")
-        print(f"[bedrock] bearer token env: {os.getenv('AWS_BEARER_TOKEN_BEDROCK', 'NOT SET')}")
         _bedrock_client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
     return _bedrock_client
 

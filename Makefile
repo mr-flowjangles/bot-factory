@@ -2,7 +2,8 @@
         s3-ls s3-upload s3-sync s3-mb \
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init \
         embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
-        init chalice chalice-stop help
+        package-streaming deploy-streaming \
+        init chalice chalice-stop test-chat help
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -34,6 +35,10 @@ help:
 	@printf "  %-38s %s\n" "ps"                           "Show container status"
 	@printf "  %-38s %s\n" "chalice"                      "Start Chalice local dev server"
 	@printf "  %-38s %s\n" "chalice-stop"                 "Stop Chalice local dev server"
+	@echo ""
+	@echo "  Testing"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "test-chat BOT={id} [MSG=\"..\"]" "Send a test message (default: hi)"
 	@echo ""
 	@echo "  Code Quality"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -85,6 +90,7 @@ help:
 	@echo "  Production Deployment"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "deploy-infra"                 "Create prod tables + deploy Chalice API"
+	@printf "  %-38s %s\n" "deploy-streaming"             "Deploy streaming Lambda + Function URL"
 	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
 	@echo ""
 
@@ -99,12 +105,12 @@ up:
 	@sleep 5
 	$(MAKE) dynamo-init
 	$(MAKE) s3-init
-	$(MAKE) chalice-stop
+	-$(MAKE) chalice-stop
 	$(MAKE) chalice
 
 down:
 	docker compose down
-	$(MAKE) chalice-stop
+	-$(MAKE) chalice-stop
 
 init:
 	$(MAKE) dynamo-init
@@ -134,10 +140,25 @@ chalice:
 
 chalice-stop:
 	@if [ -f .chalice/server.pid ]; then \
-		kill $$(cat .chalice/server.pid) 2>/dev/null && rm .chalice/server.pid && echo "Chalice stopped"; \
+		kill $$(cat .chalice/server.pid) 2>/dev/null || true; \
+		rm -f .chalice/server.pid; \
 	else \
-		lsof -ti:8000 | xargs kill -9 2>/dev/null && echo "Chalice stopped"; \
+		lsof -ti:8000 | xargs kill -9 2>/dev/null || true; \
 	fi
+	@echo "Chalice stopped"
+
+# ─────────────────────────────────────────────────────────────
+# Testing
+# ─────────────────────────────────────────────────────────────
+
+test-chat:
+	@test -n "$(BOT)" || (echo "Usage: make test-chat BOT={bot_id}" && exit 1)
+	@set -a && source .env && set +a && python3 -c "import json; from factory.lambda_handler import lambda_handler; \
+	result = lambda_handler({ \
+		'rawPath': '/chat', \
+		'requestContext': {'http': {'method': 'POST'}}, \
+		'body': json.dumps({'bot_id': '$(BOT)', 'message': '$(or $(MSG),hi)'}) \
+	}, None); print(json.dumps(json.loads(result['body']), indent=2))"
 
 # ─────────────────────────────────────────────────────────────
 # Code Quality
@@ -205,7 +226,7 @@ dynamo-scan-bot:
 	$(AWS) dynamodb scan \
 	  --table-name $(TABLE) \
 	  --filter-expression "begins_with(pk, :prefix)" \
-	  --expression-attribute-values '{":prefix": {"S": "$(bot)_"}}' \
+	  --expression-attribute-values '":prefix": {"S": "$(bot)_"}' \
 	  --output json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Count: {d[\"Count\"]}'); [print(json.dumps(i,indent=2)) for i in d['Items']]"
 
 dynamo-get:
@@ -226,7 +247,7 @@ dynamo-keys-bot:
 	$(AWS) dynamodb scan \
 	  --table-name $(TABLE) \
 	  --filter-expression "begins_with(pk, :prefix)" \
-	  --expression-attribute-values '{":prefix": {"S": "$(bot)_"}}' \
+	  --expression-attribute-values '":prefix": {"S": "$(bot)_"}' \
 	  --projection-expression "pk" \
 	  --output json | python3 -c "import sys,json; items=json.load(sys.stdin)['Items']; [print(i['pk']['S']) for i in items]"
 
@@ -249,6 +270,20 @@ deploy-infra:
 	@echo ""
 	@echo "═══ Deploying Chalice API ═══"
 	chalice deploy --stage production
+
+## Package streaming Lambda zip
+package-streaming:
+	bash scripts/package_streaming.sh
+
+## Deploy streaming Lambda + Function URL
+deploy-streaming: package-streaming
+	@echo "═══ Deploying streaming Lambda ═══"
+	terraform -chdir=terraform init
+	terraform -chdir=terraform apply -target=aws_lambda_function.streaming -target=aws_lambda_function_url.streaming
+	@echo ""
+	@echo "═══ Stream URL ═══"
+	@terraform -chdir=terraform output -raw streaming_url
+	@echo ""
 
 ## Deploy a bot to prod (run per bot, re-run on data changes)
 ## Uploads config, prompt, data to S3 then generates embeddings

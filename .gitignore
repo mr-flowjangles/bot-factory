@@ -48,3 +48,5 @@ bots/guitar/data/*
 # ...but allow a placeholder file so the directory is kept in git
 !bots/guitar/data/.gitkeep
 .chalice/config.json
+.chalice/server.pid
+.chalice/server.pid

@@ -54,6 +54,17 @@ resource "aws_dynamodb_table" "rag" {
     type = "S"
   }
 
+  attribute {
+    name = "bot_id"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "bot_id-index"
+    hash_key        = "bot_id"
+    projection_type = "ALL"
+  }
+
   tags = {
     Project = "bot-factory"
   }
@@ -155,6 +166,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
         ]
         Resource = [
           aws_dynamodb_table.rag.arn,
+          "${aws_dynamodb_table.rag.arn}/index/*",
           aws_dynamodb_table.history.arn,
           aws_dynamodb_table.logs.arn
         ]
