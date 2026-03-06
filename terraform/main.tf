@@ -45,12 +45,30 @@ resource "aws_s3_bucket_public_access_block" "bot_factory" {
 # DynamoDB — RAG embeddings
 # ─────────────────────────────────────────────────────────────
 resource "aws_dynamodb_table" "rag" {
-  name         = var.dynamo_table_name
+  name         = var.dynamo_rag_table_name
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "id"
+  hash_key     = "pk"
 
   attribute {
-    name = "id"
+    name = "pk"
+    type = "S"
+  }
+
+  tags = {
+    Project = "bot-factory"
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
+# DynamoDB — conversation history
+# ─────────────────────────────────────────────────────────────
+resource "aws_dynamodb_table" "history" {
+  name         = var.dynamo_history_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "session_id"
+
+  attribute {
+    name = "session_id"
     type = "S"
   }
 
@@ -132,10 +150,12 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:PutItem",
           "dynamodb:Scan",
           "dynamodb:Query",
-          "dynamodb:UpdateItem"
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
         ]
         Resource = [
           aws_dynamodb_table.rag.arn,
+          aws_dynamodb_table.history.arn,
           aws_dynamodb_table.logs.arn
         ]
       },

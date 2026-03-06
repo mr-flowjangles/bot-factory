@@ -9,10 +9,16 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "dynamo_table_name" {
+variable "dynamo_rag_table_name" {
   description = "DynamoDB table for RAG embeddings"
   type        = string
   default     = "BotFactoryRAG"
+}
+
+variable "dynamo_history_table_name" {
+  description = "DynamoDB table for conversation history"
+  type        = string
+  default     = "BotFactoryHistory"
 }
 
 variable "dynamo_logs_table_name" {
