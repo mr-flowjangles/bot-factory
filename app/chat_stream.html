@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot Factory — Stream</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --surface-hover: #1e1e22;
+    --border: #2a2a2e;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --accent: #22d3ee;
+    --accent-dim: rgba(34, 211, 238, 0.1);
+    --user-bg: #1c2a35;
+    --bot-bg: #1a1a1f;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  header .logo {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  header .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(34, 211, 238, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(34, 211, 238, 0.25);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  header .divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  .config-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  .config-bar label {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .config-bar input {
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .config-bar input:focus { border-color: var(--accent); }
+
+  #baseUrl { width: 280px; }
+  #botId { width: 140px; }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    margin-left: auto;
+    transition: background 0.3s;
+  }
+
+  .status-dot.ok { background: #22c55e; }
+
+  .timing {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 8px;
+  }
+
+  #chatArea {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
+  }
+
+  .msg {
+    max-width: 720px;
+    width: fit-content;
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    animation: msgIn 0.25s ease-out;
+  }
+
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg.user {
+    background: var(--user-bg);
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+    border: 1px solid rgba(34, 211, 238, 0.15);
+  }
+
+  .msg.bot {
+    background: var(--bot-bg);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .typing-indicator {
+    display: flex;
+    gap: 5px;
+    padding: 14px 18px;
+    align-self: flex-start;
+  }
+
+  .typing-indicator span {
+    width: 7px;
+    height: 7px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+  }
+
+  .typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+  }
+
+  #inputArea {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    gap: 10px;
+  }
+
+  #msgInput {
+    flex: 1;
+    font-family: var(--sans);
+    font-size: 15px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+    resize: none;
+    min-height: 46px;
+    max-height: 140px;
+  }
+
+  #msgInput:focus { border-color: var(--accent); }
+  #msgInput::placeholder { color: var(--text-muted); }
+
+  #sendBtn {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0 20px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: var(--bg);
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: opacity 0.15s;
+  }
+
+  #sendBtn:hover { opacity: 0.85; }
+  #sendBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #chatArea::-webkit-scrollbar { width: 6px; }
+  #chatArea::-webkit-scrollbar-track { background: transparent; }
+  #chatArea::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">Bot Factory</span>
+  <span class="badge">stream</span>
+  <span class="divider"></span>
+  <div class="config-bar">
+    <label>URL</label>
+    <input id="baseUrl" type="text" value="http://localhost:8001" spellcheck="false">
+    <label>Bot</label>
+    <input id="botId" type="text" value="guitar" spellcheck="false">
+    <div class="status-dot" id="statusDot" title="API status"></div>
+    <span class="timing" id="lastTiming"></span>
+  </div>
+</header>
+
+<div id="chatArea">
+  <div class="msg bot">Ready — streaming mode. Type a message to test.</div>
+</div>
+
+<div id="inputArea">
+  <textarea id="msgInput" placeholder="Ask something..." rows="1"></textarea>
+  <button id="sendBtn">Send</button>
+</div>
+
+<script>
+  const chatArea = document.getElementById('chatArea');
+  const msgInput = document.getElementById('msgInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const baseUrlInput = document.getElementById('baseUrl');
+  const botIdInput = document.getElementById('botId');
+  const statusDot = document.getElementById('statusDot');
+  const lastTiming = document.getElementById('lastTiming');
+
+  msgInput.addEventListener('input', () => {
+    msgInput.style.height = 'auto';
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+  });
+
+  msgInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  sendBtn.addEventListener('click', send);
+
+  checkHealth();
+  baseUrlInput.addEventListener('change', checkHealth);
+
+  async function checkHealth() {
+    try {
+      const res = await fetch(baseUrlInput.value.replace(/\/$/, '') + '/health');
+      const data = await res.json();
+      statusDot.classList.toggle('ok', data.status === 'ok');
+    } catch {
+      statusDot.classList.remove('ok');
+    }
+  }
+
+  function showTyping() {
+    const div = document.createElement('div');
+    div.className = 'typing-indicator';
+    div.id = 'typing';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function hideTyping() {
+    const el = document.getElementById('typing');
+    if (el) el.remove();
+  }
+
+  async function send() {
+    const text = msgInput.value.trim();
+    if (!text) return;
+
+    const userDiv = document.createElement('div');
+    userDiv.className = 'msg user';
+    userDiv.textContent = text;
+    chatArea.appendChild(userDiv);
+
+    msgInput.value = '';
+    msgInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    showTyping();
+
+    const t0 = performance.now();
+    const base = baseUrlInput.value.replace(/\/$/, '');
+    const bot_id = botIdInput.value.trim();
+
+    try {
+      const res = await fetch(base + '/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id, message: text })
+      });
+
+      if (!res.ok) {
+        let errMsg = res.statusText;
+        try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
+        hideTyping();
+        const errDiv = document.createElement('div');
+        errDiv.className = 'msg bot';
+        errDiv.textContent = 'Error: ' + errMsg;
+        chatArea.appendChild(errDiv);
+        statusDot.classList.remove('ok');
+        sendBtn.disabled = false;
+        msgInput.focus();
+        return;
+      }
+
+      hideTyping();
+      const botDiv = document.createElement('div');
+      botDiv.className = 'msg bot';
+      chatArea.appendChild(botDiv);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') continue;
+
+          try {
+            const data = JSON.parse(payload);
+            if (data.error) {
+              fullText += 'Error: ' + data.error;
+            } else if (data.token) {
+              fullText += data.token;
+            }
+            botDiv.textContent = fullText;
+            chatArea.scrollTop = chatArea.scrollHeight;
+          } catch {}
+        }
+      }
+
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+      lastTiming.textContent = elapsed + 's';
+      statusDot.classList.add('ok');
+
+    } catch (err) {
+      hideTyping();
+      const errDiv = document.createElement('div');
+      errDiv.className = 'msg bot';
+      errDiv.textContent = 'Connection error: ' + err.message;
+      chatArea.appendChild(errDiv);
+      statusDot.classList.remove('ok');
+      lastTiming.textContent = '';
+    }
+
+    sendBtn.disabled = false;
+    msgInput.focus();
+  }
+</script>
+
+</body>
+</html>

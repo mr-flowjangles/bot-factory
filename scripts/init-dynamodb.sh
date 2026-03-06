@@ -34,10 +34,21 @@ create_table() {
 # ── Tables ─────────────────────────────────────────────────────────────────────
 
 # Stores embeddings for all bots (partitioned by bot_id field)
+# Stores embeddings for all bots (GSI on bot_id for efficient per-bot queries)
 create_table BotFactoryRAG \
-    --attribute-definitions AttributeName=pk,AttributeType=S \
+    --attribute-definitions \
+        AttributeName=pk,AttributeType=S \
+        AttributeName=bot_id,AttributeType=S \
     --key-schema AttributeName=pk,KeyType=HASH \
+    --global-secondary-indexes '[
+        {
+            "IndexName": "bot_id-index",
+            "KeySchema": [{"AttributeName": "bot_id", "KeyType": "HASH"}],
+            "Projection": {"ProjectionType": "ALL"}
+        }
+    ]' \
     --billing-mode PAY_PER_REQUEST
+
 
 # Stores conversation history per session
 create_table BotFactoryHistory \
