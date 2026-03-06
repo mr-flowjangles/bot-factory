@@ -1,7 +1,7 @@
 .PHONY: up down build rebuild restart logs logs-ls ps clean nuke \
         s3-ls s3-upload s3-sync s3-mb \
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init \
-        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod \
+        embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
         init chalice chalice-stop help
 
 # ─────────────────────────────────────────────────────────────
@@ -61,11 +61,10 @@ help:
 	@printf "  %-38s %s\n" "dynamo-keys"                  "Show all keys in a table"
 	@printf "  %-38s %s\n" "dynamo-keys-bot bot={bot_id}" "Show keys for a specific bot"
 	@echo ""
-	@echo "  Data Loading"
+	@echo "  Data Loading (Local)"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "load-bot bot={bot_id}"        "Sync scripts/bots/{bot_id}/data/ to S3"
 	@printf "  %-38s %s\n" "deploy-bot bot={bot_id}"      "Upload config.yml + prompt.yml to S3 (local)"
-	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Upload config.yml + prompt.yml to S3 (prod)"
 	@echo ""
 	@echo "  Embeddings"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -83,6 +82,11 @@ help:
 	@printf "  %-38s %s\n" "clean"                        "Stop containers and remove volumes"
 	@printf "  %-38s %s\n" "nuke"                         "Full reset — removes everything including LocalStack data"
 	@echo ""
+	@echo "  Production Deployment"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "deploy-infra"                 "Create prod tables + deploy Chalice API"
+	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
+	@echo ""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -95,6 +99,7 @@ up:
 	@sleep 5
 	$(MAKE) dynamo-init
 	$(MAKE) s3-init
+	$(MAKE) chalice-stop
 	$(MAKE) chalice
 
 down:
@@ -226,7 +231,42 @@ dynamo-keys-bot:
 	  --output json | python3 -c "import sys,json; items=json.load(sys.stdin)['Items']; [print(i['pk']['S']) for i in items]"
 
 # ─────────────────────────────────────────────────────────────
-# Data Loading
+# Production Deployment
+# ─────────────────────────────────────────────────────────────
+PROD_BUCKET = $(shell terraform -chdir=infra output -raw bucket_name 2>/dev/null)
+
+## Deploy infra + API (run once, re-run on code changes)
+## Terraform creates S3/DynamoDB/IAM, then Chalice deploys Lambda + API Gateway
+deploy-infra:
+	@echo "═══ Terraform Init ═══"
+	terraform -chdir=infra init
+	@echo ""
+	@echo "═══ Terraform Apply ═══"
+	terraform -chdir=infra apply
+	@echo ""
+	@echo "═══ Syncing TF outputs → Chalice config ═══"
+	python3 scripts/sync_tf_config.py
+	@echo ""
+	@echo "═══ Deploying Chalice API ═══"
+	chalice deploy --stage production
+
+## Deploy a bot to prod (run per bot, re-run on data changes)
+## Uploads config, prompt, data to S3 then generates embeddings
+deploy-bot-prod:
+	@test -n "$(bot)" || (echo "Usage: make deploy-bot-prod bot={bot_id}" && exit 1)
+	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first (no TF bucket found)" && exit 1)
+	@echo "═══ Deploying bot: $(bot) → s3://$(PROD_BUCKET) ═══"
+	@echo "→ Uploading config + prompt..."
+	aws s3 cp scripts/bots/$(bot)/config.yml s3://$(PROD_BUCKET)/bots/$(bot)/config.yml
+	aws s3 cp scripts/bots/$(bot)/prompt.yml s3://$(PROD_BUCKET)/bots/$(bot)/prompt.yml
+	@echo "→ Syncing data..."
+	aws s3 sync scripts/bots/$(bot)/data/ s3://$(PROD_BUCKET)/bots/$(bot)/data/
+	@echo "→ Generating embeddings..."
+	APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+	@echo "═══ Bot $(bot) deployed ═══"
+
+# ─────────────────────────────────────────────────────────────
+# Data Loading (Local)
 # ─────────────────────────────────────────────────────────────
 
 load-bot:
@@ -238,18 +278,12 @@ deploy-bot:
 	$(AWS) s3 cp scripts/bots/$(bot)/config.yml $(S3_BUCKET)/bots/$(bot)/config.yml
 	$(AWS) s3 cp scripts/bots/$(bot)/prompt.yml $(S3_BUCKET)/bots/$(bot)/prompt.yml
 
-deploy-bot-prod:
-	@test -n "$(bot)" || (echo "Usage: make deploy-bot-prod bot={bot_id}" && exit 1)
-	APP_ENV=production aws s3 cp scripts/bots/$(bot)/config.yml s3://bot-factory-data/bots/$(bot)/config.yml
-	APP_ENV=production aws s3 cp scripts/bots/$(bot)/prompt.yml s3://bot-factory-data/bots/$(bot)/prompt.yml
-
 # ─────────────────────────────────────────────────────────────
 # Embeddings
 # ─────────────────────────────────────────────────────────────
 
 embed:
-	@test -n "$(bot)" || (echo "Usage: make embed bot={bot_id}" && exit 1)
-	python3 -m factory.core.generate_embeddings $(bot)
+	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(BOT) --force
 
 embed-force:
 	@test -n "$(bot)" || (echo "Usage: make embed-force bot={bot_id}" && exit 1)
@@ -257,7 +291,8 @@ embed-force:
 
 embed-prod:
 	@test -n "$(bot)" || (echo "Usage: make embed-prod bot={bot_id}" && exit 1)
-	APP_ENV=production python3 -m factory.core.generate_embeddings $(bot) --force
+	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first" && exit 1)
+	APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
 
 # ─────────────────────────────────────────────────────────────
 # Bot Scaffolding
