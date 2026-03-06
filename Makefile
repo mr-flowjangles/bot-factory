@@ -233,16 +233,16 @@ dynamo-keys-bot:
 # ─────────────────────────────────────────────────────────────
 # Production Deployment
 # ─────────────────────────────────────────────────────────────
-PROD_BUCKET = $(shell terraform -chdir=infra output -raw bucket_name 2>/dev/null)
+PROD_BUCKET = $(shell terraform -chdir=terraform output -raw bucket_name 2>/dev/null)
 
 ## Deploy infra + API (run once, re-run on code changes)
 ## Terraform creates S3/DynamoDB/IAM, then Chalice deploys Lambda + API Gateway
 deploy-infra:
 	@echo "═══ Terraform Init ═══"
-	terraform -chdir=infra init
+	terraform -chdir=terraform init
 	@echo ""
 	@echo "═══ Terraform Apply ═══"
-	terraform -chdir=infra apply
+	terraform -chdir=terraform apply
 	@echo ""
 	@echo "═══ Syncing TF outputs → Chalice config ═══"
 	python3 scripts/sync_tf_config.py
