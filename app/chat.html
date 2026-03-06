@@ -40,6 +40,7 @@
     padding: 16px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
+    flex-wrap: wrap;
   }
 
   header .logo {
@@ -62,6 +63,7 @@
     align-items: center;
     gap: 10px;
     flex: 1;
+    flex-wrap: wrap;
   }
 
   .config-bar label {
@@ -89,6 +91,7 @@
   }
 
   #apiUrl { width: 280px; }
+  #streamUrl { width: 340px; }
   #botId { width: 140px; }
 
   .status-dot {
@@ -259,7 +262,9 @@
   <span class="divider"></span>
   <div class="config-bar">
     <label>API</label>
-    <input id="apiUrl" type="text" value="http://localhost:8000" spellcheck="false">
+    <input id="apiUrl" type="text" value="http://localhost:8000" spellcheck="false" title="Chalice API (health check)">
+    <label>Stream</label>
+    <input id="streamUrl" type="text" value="" spellcheck="false" placeholder="Function URL (after deploy)" title="Lambda Function URL for streaming">
     <label>Bot</label>
     <input id="botId" type="text" value="guitar" spellcheck="false">
     <div class="status-dot" id="statusDot" title="API status"></div>
@@ -281,6 +286,7 @@
   const msgInput = document.getElementById('msgInput');
   const sendBtn = document.getElementById('sendBtn');
   const apiUrlInput = document.getElementById('apiUrl');
+  const streamUrlInput = document.getElementById('streamUrl');
   const botIdInput = document.getElementById('botId');
   const statusDot = document.getElementById('statusDot');
   const lastTiming = document.getElementById('lastTiming');
@@ -315,23 +321,10 @@
     }
   }
 
-  function addMsg(text, role, sources) {
+  function addMsg(text, role) {
     const div = document.createElement('div');
     div.className = `msg ${role}`;
     div.textContent = text;
-
-    if (sources && sources.length) {
-      const srcDiv = document.createElement('div');
-      srcDiv.className = 'sources';
-      sources.forEach(s => {
-        const tag = document.createElement('span');
-        tag.className = 'source-tag';
-        tag.textContent = `${s.category} (${(s.similarity * 100).toFixed(0)}%)`;
-        srcDiv.appendChild(tag);
-      });
-      div.appendChild(srcDiv);
-    }
-
     chatArea.appendChild(div);
     chatArea.scrollTop = chatArea.scrollHeight;
     return div;
@@ -351,6 +344,17 @@
     if (el) el.remove();
   }
 
+  /**
+   * Resolve the chat endpoint URL.
+   * - If Stream URL is set → use it directly (Function URL, no path needed)
+   * - Otherwise → fall back to Chalice /chat/stream (buffered)
+   */
+  function getChatUrl() {
+    const stream = streamUrlInput.value.trim();
+    if (stream) return stream.replace(/\/$/, '');
+    return apiUrlInput.value.replace(/\/$/, '') + '/chat/stream';
+  }
+
   async function send() {
     const text = msgInput.value.trim();
     if (!text) return;
@@ -362,27 +366,31 @@
     showTyping();
 
     const t0 = performance.now();
-    const base = apiUrlInput.value.replace(/\/$/, '');
     const bot_id = botIdInput.value.trim();
+    const url = getChatUrl();
 
     try {
-      const res = await fetch(base + '/chat/stream', {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bot_id, message: text })
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        let errMsg = res.statusText;
+        try {
+          const err = await res.json();
+          errMsg = err.error || errMsg;
+        } catch { /* not JSON */ }
         hideTyping();
-        addMsg(`Error: ${err.error || res.statusText}`, 'bot');
+        addMsg(`Error: ${errMsg}`, 'bot');
         statusDot.classList.remove('ok');
         sendBtn.disabled = false;
         msgInput.focus();
         return;
       }
 
-      // Create the bot message bubble now so we can stream into it
+      // Create bot message bubble and stream into it
       hideTyping();
       const botDiv = document.createElement('div');
       botDiv.className = 'msg bot';
@@ -392,7 +400,6 @@
       const decoder = new TextDecoder();
       let buffer = '';
       let fullText = '';
-      let firstToken = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -400,9 +407,8 @@
 
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse complete SSE lines from buffer
         const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete last line
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
@@ -410,14 +416,15 @@
           if (payload === '[DONE]') continue;
 
           try {
-            const { token } = JSON.parse(payload);
-            if (!firstToken) {
-              firstToken = true;
+            const data = JSON.parse(payload);
+            if (data.error) {
+              fullText += `Error: ${data.error}`;
+            } else if (data.token) {
+              fullText += data.token;
             }
-            fullText += token;
             botDiv.textContent = fullText;
             chatArea.scrollTop = chatArea.scrollHeight;
-          } catch { /* malformed line, skip */ }
+          } catch { /* malformed line */ }
         }
       }
 
