@@ -8,7 +8,7 @@ import subprocess
 import sys
 import os
 
-INFRA_DIR = os.path.join(os.path.dirname(__file__), "..", "infra")
+INFRA_DIR = os.path.join(os.path.dirname(__file__), "..", "terraform")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", ".chalice", "config.json")
 
 
@@ -37,7 +37,6 @@ def main():
     env = prod.setdefault("environment_variables", {})
     env["APP_ENV"] = "production"
     env["BOT_DATA_BUCKET"] = bucket
-    env["AWS_REGION"] = "us-east-1"
 
     # autogen_policy is irrelevant when manage_iam_role is False
     prod.pop("autogen_policy", None)
