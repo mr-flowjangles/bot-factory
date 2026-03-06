@@ -34,7 +34,7 @@ resource "aws_lambda_function_url" "streaming" {
 
   cors {
     allow_origins  = ["*"]
-    allow_methods  = ["POST", "OPTIONS"]
+    allow_methods  = ["POST"]
     allow_headers  = ["content-type"]
     expose_headers = ["*"]
     max_age        = 3600

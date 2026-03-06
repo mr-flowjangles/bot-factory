@@ -89,7 +89,7 @@ help:
 	@echo ""
 	@echo "  Production Deployment"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "deploy-infra"                 "Create prod tables + deploy Chalice API"
+	@printf "  %-38s %s\n" "deploy-infra"                 "Package Lambdas + deploy infra + Chalice API"
 	@printf "  %-38s %s\n" "deploy-streaming"             "Deploy streaming Lambda + Function URL"
 	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
 	@echo ""
@@ -257,8 +257,12 @@ dynamo-keys-bot:
 PROD_BUCKET = $(shell terraform -chdir=terraform output -raw bucket_name 2>/dev/null)
 
 ## Deploy infra + API (run once, re-run on code changes)
-## Terraform creates S3/DynamoDB/IAM, then Chalice deploys Lambda + API Gateway
+## Packages Lambdas, then Terraform creates S3/DynamoDB/IAM, then Chalice deploys Lambda + API Gateway
 deploy-infra:
+	@echo "═══ Packaging Lambdas ═══"
+	bash scripts/package_lambda.sh
+	bash scripts/package_streaming.sh
+	@echo ""
 	@echo "═══ Terraform Init ═══"
 	terraform -chdir=terraform init
 	@echo ""

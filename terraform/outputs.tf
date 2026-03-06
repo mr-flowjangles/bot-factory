@@ -23,7 +23,3 @@ output "lambda_exec_role_arn" {
   value       = aws_iam_role.lambda_exec.arn
 }
 
-output "streaming_url" {
-  description = "Function URL for streaming chat endpoint"
-  value       = aws_lambda_function_url.streaming.function_url
-}
