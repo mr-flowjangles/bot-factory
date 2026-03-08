@@ -31,7 +31,7 @@ drop_table() {
     echo "Dropping $name..."
     if aws dynamodb delete-table --table-name "$name" --region "$REGION" $AWS_ARGS 2>/dev/null; then
         echo "  ✓ $name dropped"
-        sleep 1  # Give LocalStack a moment
+        sleep 1
     else
         echo "  - $name didn't exist"
     fi
@@ -44,7 +44,6 @@ create_table() {
 
     echo "Creating $name..."
     
-    # Run create and capture both stdout and stderr
     local output
     if output=$(aws dynamodb create-table \
         --table-name "$name" \
@@ -77,17 +76,9 @@ fi
 echo "═══ Creating tables ═══"
 
 create_table BotFactoryRAG \
-    --attribute-definitions \
-        AttributeName=pk,AttributeType=S \
-        AttributeName=bot_id,AttributeType=S \
+    --attribute-definitions AttributeName=pk,AttributeType=S AttributeName=bot_id,AttributeType=S \
     --key-schema AttributeName=pk,KeyType=HASH \
-    --global-secondary-indexes '[
-        {
-            "IndexName": "bot_id-index",
-            "KeySchema": [{"AttributeName": "bot_id", "KeyType": "HASH"}],
-            "Projection": {"ProjectionType": "ALL"}
-        }
-    ]' \
+    --global-secondary-indexes '[{"IndexName":"bot_id-index","KeySchema":[{"AttributeName":"bot_id","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
     --billing-mode PAY_PER_REQUEST
 
 create_table BotFactoryHistory \
