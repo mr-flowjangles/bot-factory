@@ -1,9 +1,9 @@
 .PHONY: up down build rebuild restart logs logs-ls ps clean nuke \
         s3-ls s3-upload s3-sync s3-mb \
-        dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init dynamo-reset \
+        dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init \
         embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
         package-streaming deploy-streaming \
-        init server server-stop test-chat help
+        init local local-stop test-chat help
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -13,7 +13,6 @@ S3_BUCKET   = s3://bot-factory-data
 AWS_FLAGS   = --endpoint-url=$(ENDPOINT)
 AWS         = AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 aws $(AWS_FLAGS)
 TABLE       ?= BotFactoryRAG
-TABLES      = BotFactoryRAG BotFactoryHistory BotFactoryLogs
 
 # ─────────────────────────────────────────────────────────────
 # Help
@@ -25,7 +24,7 @@ help:
 	@echo "════════════════════════════════════════════════════════════"
 	@echo "  Docker"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "up [reset=1]"                 "Start all containers + Flask (reset=1 drops DynamoDB tables)"
+	@printf "  %-38s %s\n" "up"                           "Start all containers + run init + Flask"
 	@printf "  %-38s %s\n" "init"                         "Re-run S3 + DynamoDB init (after bounce)"
 	@printf "  %-38s %s\n" "down"                         "Stop all containers + Flask"
 	@printf "  %-38s %s\n" "build"                        "Build containers"
@@ -34,8 +33,8 @@ help:
 	@printf "  %-38s %s\n" "logs"                         "Tail all logs"
 	@printf "  %-38s %s\n" "logs-ls"                      "Tail LocalStack logs"
 	@printf "  %-38s %s\n" "ps"                           "Show container status"
-	@printf "  %-38s %s\n" "server"                       "Start Flask dev server"
-	@printf "  %-38s %s\n" "server-stop"                  "Stop Flask dev server"
+	@printf "  %-38s %s\n" "local"                        "Start Flask dev server"
+	@printf "  %-38s %s\n" "local-stop"                   "Stop Flask dev server"
 	@echo ""
 	@echo "  Testing"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -58,8 +57,7 @@ help:
 	@echo ""
 	@echo "  DynamoDB (Local)"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "dynamo-init"                  "Create DynamoDB tables (skip existing)"
-	@printf "  %-38s %s\n" "dynamo-reset"                 "Drop and recreate all DynamoDB tables"
+	@printf "  %-38s %s\n" "dynamo-init"                  "Create DynamoDB tables in LocalStack"
 	@printf "  %-38s %s\n" "dynamo-ls"                    "List all tables"
 	@printf "  %-38s %s\n" "dynamo-count"                 "Item count (default: BotFactoryRAG)"
 	@printf "  %-38s %s\n" "dynamo-scan"                  "Scan all items in a table"
@@ -75,7 +73,7 @@ help:
 	@echo ""
 	@echo "  Embeddings"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "embed BOT={bot_id}"           "Generate embeddings (local)"
+	@printf "  %-38s %s\n" "embed bot={bot_id}"           "Generate embeddings (local)"
 	@printf "  %-38s %s\n" "embed-force bot={bot_id}"     "Regenerate without prompt"
 	@printf "  %-38s %s\n" "embed-prod bot={bot_id}"      "Generate embeddings (production)"
 	@echo ""
@@ -91,7 +89,7 @@ help:
 	@echo ""
 	@echo "  Production Deployment"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "deploy-infra"                 "Package Lambdas + deploy via Terraform"
+	@printf "  %-38s %s\n" "deploy-infra"                 "Build Lambda + deploy via Terraform"
 	@printf "  %-38s %s\n" "deploy-streaming"             "Deploy streaming Lambda + Function URL"
 	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
 	@echo ""
@@ -105,18 +103,14 @@ up:
 	docker compose up -d
 	@echo "Waiting for LocalStack to be ready..."
 	@sleep 5
-ifeq ($(reset),1)
-	$(MAKE) dynamo-reset
-else
 	$(MAKE) dynamo-init
-endif
 	$(MAKE) s3-init
-	-$(MAKE) server-stop
-	$(MAKE) server
+	-$(MAKE) local-stop
+	$(MAKE) local
 
 down:
 	docker compose down
-	-$(MAKE) server-stop
+	-$(MAKE) local-stop
 
 init:
 	$(MAKE) dynamo-init
@@ -140,17 +134,17 @@ logs-ls:
 ps:
 	docker compose ps
 
-server:
-	LOCALSTACK_ENDPOINT=http://localhost:4566 python3 app.py & echo $$! > .flask.pid
-	@sleep 1
-	@echo "Flask running on http://localhost:8000 (PID: $$(cat .flask.pid))"
+local:
+	python3 dev_server.py & echo $$! > .flask.pid
+	@echo "Flask running on http://localhost:8001 (PID: $$(cat .flask.pid))"
 
-server-stop:
+local-stop:
 	@if [ -f .flask.pid ]; then \
 		kill $$(cat .flask.pid) 2>/dev/null || true; \
 		rm -f .flask.pid; \
+	else \
+		lsof -ti:8001 | xargs kill -9 2>/dev/null || true; \
 	fi
-	@lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 	@echo "Flask stopped"
 
 # ─────────────────────────────────────────────────────────────
@@ -159,9 +153,12 @@ server-stop:
 
 test-chat:
 	@test -n "$(BOT)" || (echo "Usage: make test-chat BOT={bot_id}" && exit 1)
-	@curl -s -X POST http://localhost:8000/chat \
-		-H "Content-Type: application/json" \
-		-d '{"bot_id": "$(BOT)", "message": "$(or $(MSG),hi)"}' | python3 -m json.tool
+	@set -a && source .env && set +a && python3 -c "import json; from factory.lambda_handler import lambda_handler; \
+	result = lambda_handler({ \
+		'rawPath': '/chat', \
+		'requestContext': {'http': {'method': 'POST'}}, \
+		'body': json.dumps({'bot_id': '$(BOT)', 'message': '$(or $(MSG),hi)'}) \
+	}, None); print(json.dumps(json.loads(result['body']), indent=2))"
 
 # ─────────────────────────────────────────────────────────────
 # Code Quality
@@ -207,48 +204,8 @@ s3-init:
 # DynamoDB (Local)
 # ─────────────────────────────────────────────────────────────
 
-dynamo-drop:
-	@echo "Dropping DynamoDB tables..."
-	@for table in $(TABLES); do \
-		$(AWS) dynamodb delete-table --table-name $$table 2>/dev/null && echo "  ✓ $$table dropped" || echo "  - $$table not found"; \
-	done
-	@sleep 1
-
-dynamo-create:
-	@echo "Creating BotFactoryRAG..."
-	@$(AWS) dynamodb create-table \
-		--table-name BotFactoryRAG \
-		--attribute-definitions \
-			AttributeName=pk,AttributeType=S \
-			AttributeName=bot_id,AttributeType=S \
-		--key-schema AttributeName=pk,KeyType=HASH \
-		--global-secondary-indexes '[{"IndexName":"bot_id-index","KeySchema":[{"AttributeName":"bot_id","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
-		--billing-mode PAY_PER_REQUEST \
-		>/dev/null 2>&1 && echo "  ✓ BotFactoryRAG created" || echo "  - BotFactoryRAG already exists"
-	@echo "Creating BotFactoryHistory..."
-	@$(AWS) dynamodb create-table \
-		--table-name BotFactoryHistory \
-		--attribute-definitions AttributeName=session_id,AttributeType=S \
-		--key-schema AttributeName=session_id,KeyType=HASH \
-		--billing-mode PAY_PER_REQUEST \
-		>/dev/null 2>&1 && echo "  ✓ BotFactoryHistory created" || echo "  - BotFactoryHistory already exists"
-	@echo "Creating BotFactoryLogs..."
-	@$(AWS) dynamodb create-table \
-		--table-name BotFactoryLogs \
-		--attribute-definitions AttributeName=id,AttributeType=S \
-		--key-schema AttributeName=id,KeyType=HASH \
-		--billing-mode PAY_PER_REQUEST \
-		>/dev/null 2>&1 && echo "  ✓ BotFactoryLogs created" || echo "  - BotFactoryLogs already exists"
-
-dynamo-verify:
-	@echo "Verifying tables..."
-	@for table in $(TABLES); do \
-		$(AWS) dynamodb describe-table --table-name $$table >/dev/null 2>&1 && echo "  ✓ $$table exists" || (echo "  ✗ $$table MISSING" && exit 1); \
-	done
-
-dynamo-init: dynamo-create dynamo-verify
-
-dynamo-reset: dynamo-drop dynamo-create dynamo-verify
+dynamo-init:
+	LOCALSTACK_ENDPOINT=http://localhost:4566 bash scripts/init-dynamodb.sh
 
 dynamo-ls:
 	$(AWS) dynamodb list-tables
@@ -299,20 +256,16 @@ dynamo-keys-bot:
 # ─────────────────────────────────────────────────────────────
 PROD_BUCKET = $(shell terraform -chdir=terraform output -raw bucket_name 2>/dev/null)
 
-## Deploy infra via Terraform (Lambda + API Gateway + S3 + DynamoDB)
+## Deploy infra + Lambda (run once, re-run on code changes)
 deploy-infra:
-	@echo "═══ Packaging Lambdas ═══"
-	bash scripts/package_lambda.sh
-	bash scripts/package_streaming.sh
+	@echo "═══ Building Lambda Package ═══"
+	bash scripts/build_lambda.sh
 	@echo ""
 	@echo "═══ Terraform Init ═══"
 	terraform -chdir=terraform init
 	@echo ""
 	@echo "═══ Terraform Apply ═══"
-	terraform -chdir=terraform apply
-	@echo ""
-	@echo "═══ Done ═══"
-	@terraform -chdir=terraform output
+	terraform -chdir=terraform apply -auto-approve
 
 ## Package streaming Lambda zip
 package-streaming:
@@ -329,7 +282,6 @@ deploy-streaming: package-streaming
 	@echo ""
 
 ## Deploy a bot to prod (run per bot, re-run on data changes)
-## Uploads config, prompt, data to S3 then generates embeddings
 deploy-bot-prod:
 	@test -n "$(bot)" || (echo "Usage: make deploy-bot-prod bot={bot_id}" && exit 1)
 	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first (no TF bucket found)" && exit 1)
@@ -361,7 +313,6 @@ deploy-bot:
 # ─────────────────────────────────────────────────────────────
 
 embed:
-	@test -n "$(BOT)" || (echo "Usage: make embed BOT={bot_id}" && exit 1)
 	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(BOT) --force
 
 embed-force:
