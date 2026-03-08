@@ -6,6 +6,7 @@ No FastAPI dependencies — safe to import anywhere.
 """
 
 import uuid
+import os
 import logging
 import yaml
 from datetime import datetime
@@ -14,6 +15,7 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 _config_cache: dict = {}
+LOGS_TABLE_NAME = os.getenv("LOGS_TABLE_NAME", "BotFactoryLogs")
 
 
 def load_bot_config(bot_id: str) -> dict:
@@ -40,7 +42,7 @@ def log_chat_interaction(bot_id: str, question: str, response: str, sources: lis
         from .retrieval import get_dynamodb_connection
 
         dynamodb = get_dynamodb_connection()
-        table = dynamodb.Table("BotFactoryLogs")
+        table = dynamodb.Table(LOGS_TABLE_NAME)
 
         clean_sources = [
             {

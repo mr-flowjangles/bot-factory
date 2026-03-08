@@ -26,8 +26,11 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      BOT_DATA_BUCKET = aws_s3_bucket.bot_factory.id
-      APP_ENV         = "production"
+      BOT_DATA_BUCKET        = aws_s3_bucket.bot_factory.id
+      RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
+      LOGS_TABLE_NAME        = aws_dynamodb_table.logs.name
+      RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
+      APP_ENV                = "production"
     }
   }
 
@@ -66,8 +69,11 @@ resource "aws_lambda_function" "streaming" {
 
   environment {
     variables = {
-      BOT_DATA_BUCKET = aws_s3_bucket.bot_factory.id
-      APP_ENV         = "production"
+      BOT_DATA_BUCKET        = aws_s3_bucket.bot_factory.id
+      RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
+      LOGS_TABLE_NAME        = aws_dynamodb_table.logs.name
+      RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
+      APP_ENV                = "production"
     }
   }
 
@@ -105,9 +111,11 @@ resource "aws_lambda_function" "embedding" {
 
   environment {
     variables = {
-      BOT_DATA_BUCKET = aws_s3_bucket.bot_factory.id
-      DATA_SOURCE     = "s3"
-      APP_ENV         = "production"
+      BOT_DATA_BUCKET        = aws_s3_bucket.bot_factory.id
+      RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
+      RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
+      DATA_SOURCE            = "s3"
+      APP_ENV                = "production"
     }
   }
 

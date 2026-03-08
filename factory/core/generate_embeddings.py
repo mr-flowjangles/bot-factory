@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
+RAG_TABLE_NAME = os.getenv("RAG_TABLE_NAME", "BotFactoryRAG")
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +165,7 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 
     # Step 1: Connect to DynamoDB
     dynamodb = get_dynamodb_connection()
-    table = dynamodb.Table("BotFactoryRAG")
+    table = dynamodb.Table(RAG_TABLE_NAME)
 
     # Step 2: Check if embeddings already exist
     if not force and bot_embeddings_exist(table, bot_id):
@@ -203,7 +204,7 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
     print("  Total:      {} embeddings".format(len(chunks)))
     for cat, count in cats.most_common():
         print("    {}: {}".format(cat, count))
-    print("  Table:      BotFactoryRAG (bot_id='{}')".format(bot_id))
+    print("  Table:      {} (bot_id='{}')".format(RAG_TABLE_NAME, bot_id))
     print()
 
 
