@@ -53,3 +53,5 @@ bots/guitar/data/*
 .chalice/deployments/
 .build
 chalicelib
+terraform/*.backup
+.flask.pid

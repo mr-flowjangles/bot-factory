@@ -3,13 +3,13 @@
 # build_lambda.sh
 #
 # Packages the bot-factory Lambda deployment zip.
-# Both Lambdas (embedding + streaming) share this zip, different handlers.
+# All Lambdas share this zip, different handlers:
+#   - handler.handler          (main API)
+#   - streaming_handler.handler (SSE streaming)
+#   - factory.core.generate_embeddings.lambda_handler (embeddings)
 #
-# Usage:
-#   ./build_lambda.sh
-#
-# Output:
-#   .build/bot-factory.zip
+# Usage:  ./scripts/build_lambda.sh
+# Output: .build/bot-factory.zip
 # =============================================================================
 
 set -e
@@ -27,9 +27,12 @@ echo ""
 rm -rf "$BUILD_DIR" "$ZIP_FILE"
 mkdir -p "$BUILD_DIR"
 
-# ── Copy source files ─────────────────────────────────────────────────────────
+# ── Copy source ───────────────────────────────────────────────────────────────
 echo "Copying source files..."
 cp -r factory "$BUILD_DIR/factory"
+cp handler.py "$BUILD_DIR/handler.py"
+cp factory/streaming_handler.py "$BUILD_DIR/streaming_handler.py"
+cp -r app "$BUILD_DIR/app"
 
 # Remove __pycache__ / .pyc
 find "$BUILD_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -37,7 +40,7 @@ find "$BUILD_DIR" -name "*.pyc" -delete 2>/dev/null || true
 
 # ── Install dependencies ───────────────────────────────────────────────────────
 echo "Installing dependencies..."
-pip3 install boto3 pyyaml -t "$BUILD_DIR" --quiet
+pip3 install boto3 pyyaml python-dotenv -t "$BUILD_DIR" --quiet
 
 # ── Zip ───────────────────────────────────────────────────────────────────────
 echo "Creating $ZIP_FILE..."
@@ -49,6 +52,6 @@ echo "======================================================"
 echo "  Build complete: $ZIP_FILE"
 echo ""
 echo "  Deploy with:"
-echo "    cd infra && terraform apply"
+echo "    cd terraform && terraform apply"
 echo "======================================================"
 echo ""

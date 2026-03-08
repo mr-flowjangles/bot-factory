@@ -19,7 +19,16 @@ output "logs_table_name" {
 }
 
 output "lambda_exec_role_arn" {
-  description = "IAM role ARN for Chalice Lambda"
+  description = "IAM role ARN for Lambda execution"
   value       = aws_iam_role.lambda_exec.arn
 }
 
+output "api_url" {
+  description = "Main API Function URL (chat, health, UI)"
+  value       = aws_lambda_function_url.api.function_url
+}
+
+output "streaming_url" {
+  description = "Streaming Function URL (SSE)"
+  value       = aws_lambda_function_url.streaming.function_url
+}
