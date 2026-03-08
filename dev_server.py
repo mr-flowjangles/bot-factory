@@ -12,14 +12,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, request, Response, stream_with_context
+from flask_cors import CORS
 from factory.core.chatbot import generate_response, generate_response_stream
 
 app = Flask(__name__)
+CORS(app)
+
 
 @app.route("/")
 def index():
     with open("app/chat_stream.html") as f:
         return Response(f.read(), content_type="text/html")
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return {"status": "ok", "service": "bot-factory"}
 
 
 @app.route("/chat/stream", methods=["POST"])
