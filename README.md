@@ -5,93 +5,118 @@
 <h1 align="center">Bot Factory</h1>
 
 <p align="center">
-  A lightweight template for building chatbot interfaces.<br>
-  Fork it, configure it, and connect it to your own backend.
+  A serverless RAG chatbot platform. Write a config, add knowledge data, deploy — get a working AI chatbot backed by AWS Bedrock.
 </p>
-
 
 # BOT-FACTORY
 
-A serverless portfolio site with an embedded AI chatbot platform. The frontend is static HTML/CSS/JS hosted on S3 and served via CloudFront. The backend is a FastAPI app running in AWS Lambda, connected to DynamoDB and S3, with AI powered by AWS Bedrock.
-
-**This project is still in Beta, and engineering continues.  this will be removed when complete**
-
-**CURRENT STATUS**
-Running locally within `docker` and `chalice`
-Embeddings are done in AWS Bedrock via Titan
-No vector DB, using Dynamo and memory to store embeddings per bot
-
-Next Steps
-- Deploy to AWS
+A serverless chatbot platform deployed on AWS. The frontend is static HTML/CSS/JS served via nginx (local) or S3+CloudFront (production). The backend is two Lambda functions connected to DynamoDB and S3, with AI powered by AWS Bedrock.
 
 ## Architecture
 
 ```
 Browser
-  → CloudFront
+  → CloudFront (production) / nginx (local)
     → S3 (static frontend: HTML, JS, CSS, assets)
-    → API Gateway → Lambda (Python)
-                      → DynamoDB (embeddings, session data)
-                      → S3 (bot knowledge data)
+    → API Gateway → Lambda (factory/lambda_handler.py)
+                      → DynamoDB BotFactoryRAG (embeddings)
+                      → DynamoDB BotFactoryLogs (chat logs)
+                      → S3 (bot configs, prompts, knowledge data)
                       → Bedrock (embeddings + Claude responses)
+    → Lambda Function URL → Lambda (factory/streaming_handler.py)
+                              → Same pipeline, streamed token-by-token
 ```
 
-Local development mirrors production using Docker Compose + LocalStack.
+Local development uses Docker Compose (nginx + LocalStack) and Chalice local server.
 
 ## Project Structure
 
 ```
 /
-├── ai/
-│   ├── factory/               ← Bot Factory (see ai/factory/README.md)
-│   │   ├── core/              ← Shared RAG engine
-│   │   ├── bots/              ← One folder per bot
-│   │   └── scaffold_bot.py    ← Frontend generator
-│   ├── scripts/               ← Export/import embedding utilities
-│   └── ...                    ← Legacy RobbAI resume assistant
+├── app/                       ← Static frontend (HTML, CSS, JS, assets)
 │
-├── app/                       ← Frontend (generated + hand-authored)
-│   ├── bot_scripts/           ← Shared and bot-specific JS/CSS
-│   └── assets/                ← Bot-specific images
+├── factory/                   ← Lambda source code
+│   ├── lambda_handler.py      ← Buffered chat Lambda (POST /chat, GET /bots, GET /health)
+│   ├── streaming_handler.py   ← Streaming chat Lambda (Function URL, SSE)
+│   └── core/                  ← Shared RAG engine (never bot-specific)
+│       ├── chatbot.py         ← Orchestrator: retrieval → Claude → response
+│       ├── retrieval.py       ← DynamoDB GSI query + cosine similarity search
+│       ├── chunker.py         ← S3 YAML → text chunks
+│       ├── generate_embeddings.py ← chunks → Bedrock Titan V2 → DynamoDB
+│       └── bot_utils.py       ← Config loader (S3), chat logger (DynamoDB)
 │
-├── terraform/                 ← Infrastructure as code
-├── docker-compose.yml         ← Local dev environment
-├── build-lambda.sh            ← Package Lambda for deployment
-└── main.py                    ← FastAPI entrypoint
+├── scripts/
+│   ├── bots/                  ← Bot source files (config, prompt, data)
+│   │   └── guitar/            ← The Fret Detective bot
+│   ├── build_lambda.sh        ← Package Lambda zip (.build/bot-factory.zip)
+│   ├── package_streaming.sh   ← Package streaming Lambda zip (.build/streaming.zip)
+│   ├── scaffold_bot.py        ← Scaffold a new bot's local structure
+│   ├── sync_tf_config.py      ← Sync Terraform outputs → .chalice/config.json
+│   ├── setup_bot_s3.sh        ← Upload all bots to LocalStack S3 (used by make up)
+│   ├── s3_data.sh             ← S3 data management utility
+│   └── init-dynamodb.sh       ← Create DynamoDB tables in LocalStack
+│
+├── terraform/                 ← Infrastructure as code (S3, DynamoDB, IAM, Lambda)
+├── app.py                     ← Chalice app (local dev API server)
+├── dev_server.py              ← Flask dev server (SSE streaming local testing)
+├── docker-compose.yml         ← Local dev environment (nginx + LocalStack)
+├── Makefile                   ← All commands: run make help
+└── .chalice/                  ← Chalice config + deployment state
 ```
-
-## Bot Factory
-
-The Bot Factory (`ai/factory/`) is a reusable RAG chatbot framework built on top of this infrastructure. Write a config, add knowledge data, run one command — get a working chatbot with semantic search and Claude-powered responses.
-
-→ **[Full documentation: ai/factory/README.md](ai/factory/README.md)**
 
 ## Bots
 
-| Bot                | ID       | Endpoint           | Description                                           |
-| ------------------ | -------- | ------------------ | ----------------------------------------------------- |
-| RobbAI             | —        | `/api/ai/chat`     | Resume assistant. Legacy code, not yet on the factory. |
-| The Fret Detective | `guitar` | `/api/guitar/chat` | Electric guitar instruction. First factory bot.       |
+Bot source files live in `scripts/bots/{bot_id}/`:
+
+| Bot                | ID       | Description                                     |
+| ------------------ | -------- | ----------------------------------------------- |
+| The Fret Detective | `guitar` | Electric guitar instruction. First factory bot. |
+
+→ **[Full bot development guide: factory/README.md](factory/README.md)**
 
 ## Local Development
 
 ```bash
-docker compose up -d
+make up
 ```
 
-The API runs at `http://localhost:8000`, frontend at `http://localhost:8080`. LocalStack simulates DynamoDB, S3, and Bedrock locally.
+This starts Docker (nginx on port 8080, LocalStack on 4566), initializes DynamoDB tables and S3, and starts the Chalice API server on port 8000.
+
+```bash
+# Send a test chat message
+make test-chat BOT=guitar MSG="What is standard tuning?"
+
+# See all available commands
+make help
+```
+
+The frontend runs at `http://localhost:8080`. The API runs at `http://localhost:8000`.
 
 ## Deploy
 
-```bash
-# Backend (Lambda)
-./build-lambda.sh
-aws s3 cp terraform/builds/fastapi-app.zip s3://aws-serverless-resume-prod/lambda/fastapi-app.zip
-aws lambda update-function-code --function-name aws-serverless-resume-api --s3-bucket aws-serverless-resume-prod --s3-key lambda/fastapi-app.zip
+### Infrastructure (first time or config changes)
 
-# Frontend (S3 + CloudFront)
-aws s3 sync app/ s3://aws-serverless-resume-prod/ --cache-control "no-cache"
+```bash
+# 1. Build and apply Terraform, then deploy Chalice API
+make deploy-infra
+
+# 2. Deploy the streaming Lambda (separate Function URL)
+make deploy-streaming
+```
+
+### Bot data (per bot, re-run on data changes)
+
+```bash
+make deploy-bot-prod bot=guitar
+```
+
+This uploads config, prompt, and data to S3, then generates embeddings in production DynamoDB.
+
+### Frontend
+
+```bash
+aws s3 sync app/ s3://<your-bucket>/
 aws cloudfront create-invalidation --distribution-id <your_id> --paths "/*"
 ```
 
-For bot-specific deploy steps (data changes, embeddings) see the factory docs.
+For bot-specific deploy steps and the full workflow, see [factory/README.md](factory/README.md).

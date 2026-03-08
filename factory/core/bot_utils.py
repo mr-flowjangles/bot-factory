@@ -9,34 +9,9 @@ import uuid
 import logging
 import yaml
 from datetime import datetime
-from pydantic import BaseModel
-from typing import Optional
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
-
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = None
-    conversation_history: list[ChatMessage] = []
-
-
-class ChatResponse(BaseModel):
-    response: str
-    sources: list[dict] = []
-
-
-class BotConfigResponse(BaseModel):
-    enabled: bool
-    name: str
-    personality: str
-
 
 _config_cache: dict = {}
 

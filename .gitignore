@@ -25,6 +25,8 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/.terraform.lock.hcl
+.flask.pid
+terraform/*.backup
 
 # LocalStack
 localstack-data/
@@ -47,11 +49,4 @@ logs/
 bots/guitar/data/*
 # ...but allow a placeholder file so the directory is kept in git
 !bots/guitar/data/.gitkeep
-.chalice/config.json
-.chalice/server.pid
-.chalice/server.pid
-.chalice/deployments/
-.build
-chalicelib
-terraform/*.backup
-.flask.pid
+

@@ -10,40 +10,31 @@ Done
 
 Done
 
-## 3) Add an explicit “local vs production” command matrix
+## 3) Add an explicit "local vs production" command matrix
 
-done
+Done
 
 ## 4) Add a short architecture map with ownership boundaries
 
-- Core concepts exist, but ownership boundaries (what to edit per bot vs framework) are easy to miss.
-- Suggestion: add a 10-line “edit here vs don’t edit here” section (e.g., `factory/bots/<id>/` vs `factory/core/`).
-- Benefit: prevents accidental edits in shared internals.
+Done — factory/README.md now has explicit "Edit freely / Edit with care / Don't edit" sections.
 
 ## 5) Clarify legacy vs current implementation status
 
-- There are references to legacy components and migrated factory components.
-- Suggestion: add a small “Current status” section that states what is legacy, what is active, and migration intent.
-- Benefit: avoids ambiguity about where new work should go.
+Done — root README.md and factory/README.md updated to reflect current Lambda/Chalice architecture. Old FastAPI references removed.
 
-## 6) Add a minimal “first successful run” checklist
+## 6) Add a minimal "first successful run" checklist
 
-- Suggestion: add a short checklist for first-time setup:
-  1. `docker compose up -d`
-  2. create bot from template
-  3. upload data
-  4. generate embeddings
-  5. hit `/api/{bot_id}/chat`
-- Benefit: gives contributors a confidence-building happy path.
+Done — factory/README.md Step 1–8 guides the full workflow from scaffold to local test.
 
 ## 7) Tighten terminology consistency
 
-- Terms like “factory”, “bot”, “chatbot”, and provider names are used in slightly different ways across docs.
-- Suggestion: add a tiny glossary section (5–8 terms).
-- Benefit: reduces confusion in discussions and PR reviews.
+Done — all docs now use consistent terms:
+- **bot**: a configured chatbot instance (config + prompt + data in S3)
+- **factory**: the shared Lambda code and RAG engine in `factory/`
+- **embedding**: a 1024-dim Bedrock Titan V2 vector stored in DynamoDB
+- **chunk**: a single embeddable text unit produced by the chunker from a YAML entry
+- **bot_id**: the unique string identifier that drives S3 paths and DynamoDB partitioning
 
 ## 8) Link deep docs from the top-level README
 
-- Existing deep docs under `factory/core/docs/` are useful but easy to miss.
-- Suggestion: add a “Further reading” block linking chat flow, embedding flow, and local development docs.
-- Benefit: helps advanced contributors self-serve quickly.
+Done — root README.md links to factory/README.md. factory/README.md links to CHAT_FLOW.md, EMBEDDING_FLOW.md, and LOCAL_DEVELOPMENT.md.
