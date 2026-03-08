@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
-GSI_NAME = "bot_id-index"
+RAG_TABLE_NAME = os.getenv("RAG_TABLE_NAME", "BotFactoryRAG")
+GSI_NAME = os.getenv("RAG_BOT_ID_INDEX_NAME", "bot_id-index")
 
 # Per-bot embedding cache — survives across warm Lambda invocations
 _embeddings_cache = {}
@@ -48,7 +49,7 @@ def get_cached_embeddings(bot_id: str) -> list[dict]:
     t_start = time.time()
 
     dynamodb = get_dynamodb_connection()
-    table = dynamodb.Table("BotFactoryRAG")
+    table = dynamodb.Table(RAG_TABLE_NAME)
 
     # Query the GSI — reads only this bot's items, not the whole table
     items = []
