@@ -50,3 +50,8 @@ bots/guitar/data/*
 .chalice/config.json
 .chalice/server.pid
 .chalice/server.pid
+.chalice/deployments/
+.build
+chalicelib
+terraform/*.backup
+.flask.pid

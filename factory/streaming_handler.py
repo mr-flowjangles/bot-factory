@@ -1,6 +1,5 @@
 """
 Streaming Lambda handler for Function URL (RESPONSE_STREAM mode).
-Invoked directly by Lambda Function URL — bypasses API Gateway.
 """
 
 import json
@@ -9,21 +8,59 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+}
 
-def handler(event, response_stream):
+
+def handler(event, *args):
     """
-    Lambda streaming handler. Function URL with RESPONSE_STREAM invoke mode
-    passes a writable response_stream instead of expecting a return value.
+    Lambda streaming handler.
+    - Function URL with RESPONSE_STREAM: (event, response_stream, context)
+    - Direct invocation: (event, context)
     """
+    if len(args) == 2:
+        response_stream, context = args
+        is_streaming = True
+    else:
+        context = args[0]
+        response_stream = None
+        is_streaming = False
+
+    http = event.get("requestContext", {}).get("http", {})
+    method = http.get("method", "POST")
+    path = http.get("path", "/")
+
+    if path == "/health" or path.endswith("/health"):
+        response = {"status": "ok", "service": "bot-factory-stream"}
+        if is_streaming:
+            response_stream.write(json.dumps(response).encode())
+            response_stream.close()
+            return
+        return {"statusCode": 200, "body": json.dumps(response)}
+
+    if method == "OPTIONS":
+        if is_streaming:
+            response_stream.write(b"")
+            response_stream.close()
+            return
+        return {"statusCode": 200, "headers": _CORS_HEADERS, "body": ""}
+
     try:
-        body = json.loads(event.get("body", "{}"))
+        body = json.loads(event.get("body") or "{}")
     except (json.JSONDecodeError, AttributeError):
         body = {}
 
     bot_id = body.get("bot_id")
     message = body.get("message")
 
-    # --- Validation ---
+    if not is_streaming:
+        if not bot_id or not message:
+            return {"statusCode": 400, "body": json.dumps({"error": "bot_id and message required"})}
+        return {"statusCode": 501, "body": json.dumps({"error": "Use Function URL for streaming"})}
+
     if not bot_id:
         response_stream.write(b'data: {"error":"bot_id is required"}\n\n')
         response_stream.close()
@@ -34,7 +71,6 @@ def handler(event, response_stream):
         response_stream.close()
         return
 
-    # --- Stream tokens from Bedrock ---
     try:
         from factory.core.chatbot import generate_response_stream
 
@@ -54,8 +90,7 @@ def handler(event, response_stream):
 
     except Exception as e:
         logger.error(f"[stream:{bot_id}] error: {e}", exc_info=True)
-        response_stream.write(
-            f'data: {json.dumps({"error": str(e)})}\n\n'.encode("utf-8")
-        )
+        error_msg = f'data: {json.dumps({"error": str(e)})}\n\n'
+        response_stream.write(error_msg.encode())
 
     response_stream.close()
