@@ -13,9 +13,6 @@ provider "aws" {
 
 # ─────────────────────────────────────────────────────────────
 # S3 — shared bot factory bucket
-# bots/{bot_id}/config.yml
-# bots/{bot_id}/prompt.yml
-# bots/{bot_id}/data/*.yml
 # ─────────────────────────────────────────────────────────────
 resource "aws_s3_bucket" "bot_factory" {
   bucket = var.bucket_name
@@ -181,4 +178,38 @@ resource "aws_iam_role_policy" "lambda_policy" {
       }
     ]
   })
+}
+
+# ─────────────────────────────────────────────────────────────
+# Outputs
+# (Lambdas defined in lambdas.tf)
+# ─────────────────────────────────────────────────────────────
+output "bucket_name" {
+  value       = aws_s3_bucket.bot_factory.id
+  description = "Bot Factory S3 bucket name"
+}
+
+output "rag_table_name" {
+  value       = aws_dynamodb_table.rag.name
+  description = "RAG DynamoDB table name"
+}
+
+output "lambda_role_arn" {
+  value       = aws_iam_role.lambda_exec.arn
+  description = "Lambda execution role ARN"
+}
+
+output "stream_function_url" {
+  value       = aws_lambda_function_url.streaming.function_url
+  description = "Streaming Lambda Function URL"
+}
+
+output "stream_function_name" {
+  value       = aws_lambda_function.streaming.function_name
+  description = "Streaming Lambda function name"
+}
+
+output "embed_function_name" {
+  value       = aws_lambda_function.embedding.function_name
+  description = "Embed Lambda function name"
 }
