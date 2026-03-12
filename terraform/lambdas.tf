@@ -52,14 +52,14 @@ resource "aws_lambda_function_url" "api" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Streaming Lambda — streaming_handler.handler
+# Streaming Lambda — Lambda Web Adapter + Flask (dev_server.py)
 # SSE token-by-token via Function URL
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_lambda_function" "streaming" {
   function_name = "bot-factory-stream"
   role          = aws_iam_role.lambda_exec.arn
-  handler       = "factory.streaming_handler.handler"
+  handler       = "run.sh"
   runtime       = "python3.12"
   timeout       = 120
   memory_size   = 1024
@@ -67,13 +67,20 @@ resource "aws_lambda_function" "streaming" {
   filename         = local.lambda_zip
   source_code_hash = local.lambda_hash
 
+  layers = [
+    "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerX86:24"
+  ]
+
   environment {
     variables = {
-      BOT_DATA_BUCKET        = aws_s3_bucket.bot_factory.id
-      RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
-      LOGS_TABLE_NAME        = aws_dynamodb_table.logs.name
-      RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
-      APP_ENV                = "production"
+      BOT_DATA_BUCKET         = aws_s3_bucket.bot_factory.id
+      RAG_TABLE_NAME          = aws_dynamodb_table.rag.name
+      LOGS_TABLE_NAME         = aws_dynamodb_table.logs.name
+      RAG_BOT_ID_INDEX_NAME   = "bot_id-index"
+      APP_ENV                 = "production"
+      AWS_LWA_INVOKE_MODE     = "response_stream"
+      AWS_LWA_PORT            = "8080"
+      AWS_LAMBDA_EXEC_WRAPPER = "/opt/bootstrap"
     }
   }
 
@@ -140,4 +147,18 @@ resource "aws_lambda_permission" "streaming_public" {
   function_name          = aws_lambda_function.streaming.function_name
   principal              = "*"
   function_url_auth_type = "NONE"
+}
+
+resource "aws_lambda_permission" "api_public_invoke" {
+  statement_id  = "AllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "*"
+}
+
+resource "aws_lambda_permission" "streaming_public_invoke" {
+  statement_id  = "AllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.streaming.function_name
+  principal     = "*"
 }
