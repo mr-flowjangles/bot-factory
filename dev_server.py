@@ -25,6 +25,12 @@ def index():
         return Response(f.read(), content_type="text/html")
 
 
+@app.route("/test")
+def test_page():
+    with open("app/test.html") as f:
+        return Response(f.read(), content_type="text/html")
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}

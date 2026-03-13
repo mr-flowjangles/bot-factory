@@ -3,9 +3,9 @@
 # build_lambda.sh
 #
 # Packages the bot-factory Lambda deployment zip.
-# All Lambdas share this zip, different handlers:
-#   - handler.handler          (main API)
-#   - streaming_handler.handler (SSE streaming)
+# Three Lambdas share this zip, different handlers:
+#   - run.sh (LWA streaming via Flask/dev_server.py)
+#   - factory.streaming_handler.handler              (legacy fallback)
 #   - factory.core.generate_embeddings.lambda_handler (embeddings)
 #
 # Usage:  ./scripts/build_lambda.sh
@@ -30,9 +30,14 @@ mkdir -p "$BUILD_DIR"
 # ── Copy source ───────────────────────────────────────────────────────────────
 echo "Copying source files..."
 cp -r factory "$BUILD_DIR/factory"
-cp handler.py "$BUILD_DIR/handler.py"
-cp factory/streaming_handler.py "$BUILD_DIR/streaming_handler.py"
-cp -r app "$BUILD_DIR/app"
+cp dev_server.py "$BUILD_DIR/dev_server.py"
+cp run.sh "$BUILD_DIR/run.sh"
+chmod +x "$BUILD_DIR/run.sh"
+
+# Copy static assets (chat HTML)
+if [ -d "app" ]; then
+  cp -r app "$BUILD_DIR/app"
+fi
 
 # Remove __pycache__ / .pyc
 find "$BUILD_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -40,7 +45,13 @@ find "$BUILD_DIR" -name "*.pyc" -delete 2>/dev/null || true
 
 # ── Install dependencies ───────────────────────────────────────────────────────
 echo "Installing dependencies..."
-pip3 install boto3 pyyaml python-dotenv -t "$BUILD_DIR" --quiet
+pip3 install boto3 pyyaml python-dotenv flask flask-cors numpy \
+  -t "$BUILD_DIR" --quiet \
+  --platform manylinux2014_x86_64 \
+  --implementation cp \
+  --python-version 3.12 \
+  --only-binary=:all: \
+  --upgrade
 
 # ── Zip ───────────────────────────────────────────────────────────────────────
 echo "Creating $ZIP_FILE..."
