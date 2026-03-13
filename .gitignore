@@ -17,6 +17,7 @@ env/
 .env.local
 .env.*.local
 _scratch/
+.build/
 
 
 # AWS
@@ -50,3 +51,4 @@ bots/guitar/data/*
 # ...but allow a placeholder file so the directory is kept in git
 !bots/guitar/data/.gitkeep
 
+AWSCLIV2.pkg
