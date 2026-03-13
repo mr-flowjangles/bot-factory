@@ -7,9 +7,9 @@ Uploading prompt/data to S3 is a separate step (make deploy-bot).
 
 What it creates:
   Local:
-    factory/bots/{bot_id}/config.yml    (bot settings template)
-    factory/bots/{bot_id}/prompt.yml    (system prompt template)
-    scripts/load/{bot_id}/              (drop YAML knowledge base files here)
+    scripts/bots/{bot_id}/config.yml    (bot settings template)
+    scripts/bots/{bot_id}/prompt.yml    (system prompt template)
+    scripts/bots/{bot_id}/data/         (drop YAML knowledge base files here)
 
   S3 (bot-factory-data bucket):
     Creates the bucket if it doesn't exist
@@ -79,7 +79,7 @@ This syncs files to s3://bot-factory-data/bots/{bot_id}/data/
 
 Then generate embeddings:
 
-  make embed bot={bot_id}
+  make embed BOT={bot_id}
 """
 
 
@@ -115,10 +115,10 @@ def ensure_bucket(s3, bucket: str):
 def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-data"):
     print(f"\n🔧 Scaffolding bot: {bot_id}\n")
 
-    # --- Local: factory/bots/{bot_id}/config.yml + prompt.yml ---
-    bot_dir = Path("factory") / "bots" / bot_id
+    # --- Local: scripts/bots/{bot_id}/ (config + prompt + data/) ---
+    bot_dir = Path("scripts") / "bots" / bot_id
     if bot_dir.exists():
-        print(f"  ⚠️  factory/bots/{bot_id}/ already exists — skipping")
+        print(f"  ⚠️  scripts/bots/{bot_id}/ already exists — skipping")
     else:
         bot_dir.mkdir(parents=True)
         config_path = bot_dir / "config.yml"
@@ -129,15 +129,11 @@ def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-d
         prompt_path.write_text(PROMPT_TEMPLATE.format(bot_id=bot_id))
         print(f"  ✅ Created {prompt_path}")
 
-    # --- Local: scripts/load/{bot_id}/ ---
-    load_dir = Path("scripts") / "load" / bot_id
-    if load_dir.exists():
-        print(f"  ⚠️  scripts/load/{bot_id}/ already exists — skipping")
-    else:
-        load_dir.mkdir(parents=True)
-        readme_path = load_dir / "README.md"
+        data_dir = bot_dir / "data"
+        data_dir.mkdir()
+        readme_path = data_dir / "README.md"
         readme_path.write_text(LOAD_README.format(bot_id=bot_id))
-        print(f"  ✅ Created scripts/load/{bot_id}/")
+        print(f"  ✅ Created scripts/bots/{bot_id}/data/")
 
     # --- S3: ensure bucket exists ---
     s3 = get_s3_client(endpoint_url)
@@ -146,15 +142,15 @@ def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-d
     # --- Summary ---
     print(f"\n🎉 Bot '{bot_id}' scaffolded!\n")
     print(f"   Local files created:")
-    print(f"     factory/bots/{bot_id}/config.yml     ← edit bot settings")
-    print(f"     factory/bots/{bot_id}/prompt.yml     ← edit system prompt")
-    print(f"     scripts/load/{bot_id}/               ← drop knowledge base YAMLs here")
+    print(f"     scripts/bots/{bot_id}/config.yml     ← edit bot settings")
+    print(f"     scripts/bots/{bot_id}/prompt.yml     ← edit system prompt")
+    print(f"     scripts/bots/{bot_id}/data/           ← drop knowledge base YAMLs here")
     print(f"\n   Next steps:")
-    print(f"   1. Edit factory/bots/{bot_id}/config.yml")
-    print(f"   2. Edit factory/bots/{bot_id}/prompt.yml")
-    print(f"   3. Run: make deploy-bot bot={bot_id}   ← uploads prompt to S3")
-    print(f"   4. Add YAMLs to scripts/load/{bot_id}/ and run: make load-bot bot={bot_id}")
-    print(f"   5. Generate embeddings: make embed bot={bot_id}")
+    print(f"   1. Edit scripts/bots/{bot_id}/config.yml")
+    print(f"   2. Edit scripts/bots/{bot_id}/prompt.yml")
+    print(f"   3. Run: make deploy-bot bot={bot_id}   ← uploads config + prompt to S3")
+    print(f"   4. Add YAMLs to scripts/bots/{bot_id}/data/ and run: make load-bot bot={bot_id}")
+    print(f"   5. Generate embeddings: make embed BOT={bot_id}")
     print(f"   6. Set enabled: true in config.yml and restart\n")
 
 
@@ -172,8 +168,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.bot_id.isalnum():
-        print("❌ bot_id must be alphanumeric (e.g. 'cat', 'guitar', 'recipes')")
+    if not all(c.isalnum() or c == '-' for c in args.bot_id):
+        print("❌ bot_id must be alphanumeric or hyphens (e.g. 'guitar', 'the-fret-detective')")
         sys.exit(1)
 
     scaffold(args.bot_id, args.endpoint_url, args.bucket)

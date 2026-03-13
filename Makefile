@@ -3,6 +3,7 @@
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init \
         embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
         package-streaming deploy-streaming \
+        gen-key gen-key-prod list-keys list-keys-prod revoke-key \
         init local local-stop test-chat help
 
 # ─────────────────────────────────────────────────────────────
@@ -92,6 +93,14 @@ help:
 	@printf "  %-38s %s\n" "deploy-infra"                 "Build Lambda + deploy via Terraform"
 	@printf "  %-38s %s\n" "deploy-streaming"             "Deploy streaming Lambda + Function URL"
 	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
+	@echo ""
+	@echo "  Auth"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "gen-key bot={id} [name=label]"  "Generate local API key"
+	@printf "  %-38s %s\n" "gen-key-prod bot={id} [name=x]" "Generate prod API key"
+	@printf "  %-38s %s\n" "list-keys"                      "List all local API keys"
+	@printf "  %-38s %s\n" "list-keys-prod"                 "List all prod API keys"
+	@printf "  %-38s %s\n" "revoke-key key=bf_live_..."     "Revoke a key"
 	@echo ""
 
 
@@ -313,7 +322,7 @@ deploy-bot:
 # ─────────────────────────────────────────────────────────────
 
 embed:
-	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(BOT) --force
+	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(bot) --force
 
 embed-force:
 	@test -n "$(bot)" || (echo "Usage: make embed-force bot={bot_id}" && exit 1)
@@ -335,6 +344,28 @@ scaffold:
 scaffold-prod:
 	@test -n "$(bot)" || (echo "Usage: make scaffold-prod bot={bot_id}" && exit 1)
 	APP_ENV=production python3 scripts/scaffold_bot.py $(bot)
+
+# ─────────────────────────────────────────────────────────────
+# Auth
+# ─────────────────────────────────────────────────────────────
+
+gen-key: ## Generate local API key: make gen-key bot=guitar name=test
+	@test -n "$(bot)" || (echo "Usage: make gen-key bot={bot_id} [name=label]" && exit 1)
+	@python3 -m scripts.generate_api_key $(bot) --name "$(or $(name),default)"
+
+gen-key-prod: ## Generate prod API key: make gen-key-prod bot=guitar name=fret-prod
+	@test -n "$(bot)" || (echo "Usage: make gen-key-prod bot={bot_id} [name=label]" && exit 1)
+	@APP_ENV=production python3 -m scripts.generate_api_key $(bot) --name "$(or $(name),default)"
+
+list-keys: ## List all local API keys
+	@python3 -m scripts.generate_api_key --list
+
+list-keys-prod: ## List all prod API keys
+	@APP_ENV=production python3 -m scripts.generate_api_key --list
+
+revoke-key: ## Revoke a key: make revoke-key key=bf_live_abc123...
+	@test -n "$(key)" || (echo "Usage: make revoke-key key=bf_live_..." && exit 1)
+	@python3 -m scripts.generate_api_key --revoke $(key)
 
 # ─────────────────────────────────────────────────────────────
 # Cleanup
