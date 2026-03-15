@@ -3,6 +3,7 @@
         dynamo-ls dynamo-scan dynamo-query dynamo-get dynamo-count dynamo-items dynamo-init \
         embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
         package-streaming deploy-streaming \
+        gen-key gen-key-prod env \
         init local local-stop test-chat help
 
 # ─────────────────────────────────────────────────────────────
@@ -22,6 +23,10 @@ help:
 	@echo ""
 	@echo "Bot Factory — Available Commands"
 	@echo "════════════════════════════════════════════════════════════"
+	@echo "  Setup"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "env"                           "Create .env from .env.example"
+	@echo ""
 	@echo "  Docker"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "up"                           "Start all containers + run init + Flask"
@@ -77,6 +82,11 @@ help:
 	@printf "  %-38s %s\n" "embed-force bot={bot_id}"     "Regenerate without prompt"
 	@printf "  %-38s %s\n" "embed-prod bot={bot_id}"      "Generate embeddings (production)"
 	@echo ""
+	@echo "  API Keys"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "gen-key bot={id} name={label}" "Generate an API key (local)"
+	@printf "  %-38s %s\n" "gen-key-prod bot={id} name={label}" "Generate an API key (production)"
+	@echo ""
 	@echo "  Scaffolding"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "scaffold bot={bot_id}"        "Create a new bot (local)"
@@ -94,6 +104,19 @@ help:
 	@printf "  %-38s %s\n" "deploy-bot-prod bot={bot_id}" "Deploy a bot to prod (S3 + embeddings)"
 	@echo ""
 
+
+# ─────────────────────────────────────────────────────────────
+# Environment Setup
+# ─────────────────────────────────────────────────────────────
+
+env:
+	@if [ -f .env ]; then \
+		echo "⚠️  .env already exists — skipping (delete it first to regenerate)"; \
+	else \
+		cp .env.example .env; \
+		echo "✅ Created .env from .env.example"; \
+		echo "   Edit .env to add your API_KEY (run: make gen-key bot={bot_id} name=dev-local)"; \
+	fi
 
 # ─────────────────────────────────────────────────────────────
 # Docker Compose
@@ -313,7 +336,8 @@ deploy-bot:
 # ─────────────────────────────────────────────────────────────
 
 embed:
-	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(BOT) --force
+	@test -n "$(bot)" || (echo "Usage: make embed bot={bot_id}" && exit 1)
+	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(bot) --force
 
 embed-force:
 	@test -n "$(bot)" || (echo "Usage: make embed-force bot={bot_id}" && exit 1)
@@ -323,6 +347,20 @@ embed-prod:
 	@test -n "$(bot)" || (echo "Usage: make embed-prod bot={bot_id}" && exit 1)
 	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first" && exit 1)
 	APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+
+# ─────────────────────────────────────────────────────────────
+# API Keys
+# ─────────────────────────────────────────────────────────────
+
+gen-key:
+	@test -n "$(bot)" || (echo "Usage: make gen-key bot={bot_id} name={key_name}" && exit 1)
+	@test -n "$(name)" || (echo "Usage: make gen-key bot={bot_id} name={key_name}" && exit 1)
+	python3 scripts/gen_api_key.py $(bot) --name $(name) --endpoint-url $(ENDPOINT)
+
+gen-key-prod:
+	@test -n "$(bot)" || (echo "Usage: make gen-key-prod bot={bot_id} name={key_name}" && exit 1)
+	@test -n "$(name)" || (echo "Usage: make gen-key-prod bot={bot_id} name={key_name}" && exit 1)
+	APP_ENV=production python3 scripts/gen_api_key.py $(bot) --name $(name)
 
 # ─────────────────────────────────────────────────────────────
 # Bot Scaffolding

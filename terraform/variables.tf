@@ -26,3 +26,9 @@ variable "dynamo_logs_table_name" {
   type        = string
   default     = "BotFactoryLogs"
 }
+
+variable "dynamo_api_keys_table_name" {
+  description = "DynamoDB table for API keys"
+  type        = string
+  default     = "BotFactoryApiKeys"
+}

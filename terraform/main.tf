@@ -104,6 +104,24 @@ resource "aws_dynamodb_table" "logs" {
 }
 
 # ─────────────────────────────────────────────────────────────
+# DynamoDB — API keys
+# ─────────────────────────────────────────────────────────────
+resource "aws_dynamodb_table" "api_keys" {
+  name         = var.dynamo_api_keys_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "api_key"
+
+  attribute {
+    name = "api_key"
+    type = "S"
+  }
+
+  tags = {
+    Project = "bot-factory"
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
 # IAM — Lambda execution role
 # ─────────────────────────────────────────────────────────────
 resource "aws_iam_role" "lambda_exec" {
@@ -165,7 +183,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.rag.arn,
           "${aws_dynamodb_table.rag.arn}/index/*",
           aws_dynamodb_table.history.arn,
-          aws_dynamodb_table.logs.arn
+          aws_dynamodb_table.logs.arn,
+          aws_dynamodb_table.api_keys.arn
         ]
       },
       {

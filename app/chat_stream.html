@@ -243,7 +243,9 @@
     <label>URL</label>
     <input id="baseUrl" type="text" value="http://localhost:8001" spellcheck="false">
     <label>Bot</label>
-    <input id="botId" type="text" value="guitar" spellcheck="false">
+    <input id="botId" type="text" value="" spellcheck="false" placeholder="enter bot id">
+    <label>Key</label>
+    <input id="apiKey" type="password" value="" spellcheck="false" placeholder="bfk_..." title="API Key">
     <div class="status-dot" id="statusDot" title="API status"></div>
     <span class="timing" id="lastTiming"></span>
   </div>
@@ -264,6 +266,7 @@
   const sendBtn = document.getElementById('sendBtn');
   const baseUrlInput = document.getElementById('baseUrl');
   const botIdInput = document.getElementById('botId');
+  const apiKeyInput = document.getElementById('apiKey');
   const statusDot = document.getElementById('statusDot');
   const lastTiming = document.getElementById('lastTiming');
 
@@ -324,9 +327,13 @@
     const bot_id = botIdInput.value.trim();
 
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      const apiKey = apiKeyInput.value.trim();
+      if (apiKey) headers['X-API-Key'] = apiKey;
+
       const res = await fetch(base + '/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ bot_id, message: text })
       });
 

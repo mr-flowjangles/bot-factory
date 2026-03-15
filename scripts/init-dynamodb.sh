@@ -69,6 +69,7 @@ if [[ "$DROP_TABLES" == "true" ]]; then
     drop_table BotFactoryRAG
     drop_table BotFactoryHistory
     drop_table BotFactoryLogs
+    drop_table BotFactoryApiKeys
     echo ""
 fi
 
@@ -91,13 +92,18 @@ create_table BotFactoryLogs \
     --key-schema AttributeName=id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST
 
+create_table BotFactoryApiKeys \
+    --attribute-definitions AttributeName=api_key,AttributeType=S \
+    --key-schema AttributeName=api_key,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST
+
 # ── Verify ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "═══ Verifying tables ═══"
 TABLES=$(aws dynamodb list-tables --region "$REGION" $AWS_ARGS --query 'TableNames' --output text)
 echo "Tables: $TABLES"
 
-for required in BotFactoryRAG BotFactoryHistory BotFactoryLogs; do
+for required in BotFactoryRAG BotFactoryHistory BotFactoryLogs BotFactoryApiKeys; do
     if echo "$TABLES" | grep -q "$required"; then
         echo "  ✓ $required exists"
     else

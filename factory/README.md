@@ -21,7 +21,7 @@ For a detailed trace of every file and function called during a chat request, se
 
 - **Docker** — for local development (`make up`)
 - **AWS CLI** — configured with credentials for DynamoDB, S3, and Bedrock
-- **Chalice** — `pip install chalice` (for `make up` and `make deploy-infra`)
+- **Flask** — `pip install flask flask-cors` (for local dev server)
 
 **AWS Bedrock access** — request model access in the AWS Console → Bedrock → Model catalog:
 - `amazon.titan-embed-text-v2:0` (embeddings)
@@ -52,7 +52,6 @@ Changes here affect **all bots**. Test against multiple bots before committing.
 ```
 factory/lambda_handler.py      # Lambda entry point (POST /chat, GET /bots, GET /health)
 factory/streaming_handler.py   # Streaming Lambda entry point (Lambda Function URL)
-app.py                         # Chalice app (local dev only)
 terraform/                     # Infrastructure as code
 ```
 
@@ -66,9 +65,9 @@ make scaffold bot={bot_id}
 
 This creates local files and ensures the S3 bucket exists:
 ```
-factory/bots/{bot_id}/config.yml     ← edit bot settings
-factory/bots/{bot_id}/prompt.yml     ← edit system prompt
-scripts/load/{bot_id}/               ← drop knowledge base YAMLs here
+scripts/bots/{bot_id}/config.yml     ← edit bot settings
+scripts/bots/{bot_id}/prompt.yml     ← edit system prompt
+scripts/bots/{bot_id}/data/          ← drop knowledge base YAMLs here
 ```
 
 ### Step 2: Write config.yml
@@ -225,7 +224,7 @@ make up
 ### Step 8: Deploy to production
 
 ```bash
-# First time: provision infrastructure + deploy Chalice API
+# First time: provision infrastructure
 make deploy-infra
 
 # Deploy streaming Lambda (Function URL for real SSE)
@@ -325,13 +324,13 @@ If your bot has many similar entries (like The Fret Detective's chord voicings a
 
 | Task | Command | Notes |
 | ---- | ------- | ----- |
-| Start local stack | `make up` | nginx :8080, Chalice API :8000, LocalStack :4566 |
+| Start local stack | `make up` | nginx :8080, Flask :8001, LocalStack :4566 |
 | Stop everything | `make down` | |
 | Deploy bot data (local) | `make load-bot bot={id}` | Upload data to LocalStack S3 |
 | Deploy config+prompt (local) | `make deploy-bot bot={id}` | Upload config+prompt to LocalStack S3 |
 | Generate embeddings (local) | `make embed bot={id}` | Reads LocalStack S3, writes LocalStack DynamoDB |
 | Send test message | `make test-chat BOT={id} MSG="..."` | Calls lambda_handler directly |
-| Deploy infra (prod) | `make deploy-infra` | Terraform + Chalice deploy |
+| Deploy infra (prod) | `make deploy-infra` | Terraform deploy |
 | Deploy streaming (prod) | `make deploy-streaming` | Streaming Lambda + Function URL |
 | Deploy bot (prod) | `make deploy-bot-prod bot={id}` | Upload to prod S3 + generate prod embeddings |
 | Scaffold new bot | `make scaffold bot={id}` | Creates local file structure |

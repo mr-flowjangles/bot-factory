@@ -52,3 +52,6 @@ bots/guitar/data/*
 !bots/guitar/data/.gitkeep
 
 AWSCLIV2.pkg
+
+#Claude
+CLAUDE_HELP
