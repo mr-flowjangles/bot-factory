@@ -11,7 +11,7 @@ logger.setLevel(logging.INFO)
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Headers": "content-type, x-api-key",
 }
 
 
@@ -63,6 +63,15 @@ def handler(event, *args):
 
     if not bot_id:
         response_stream.write(b'data: {"error":"bot_id is required"}\n\n')
+        response_stream.close()
+        return
+
+    # Auth check
+    headers = event.get("headers", {})
+    api_key = headers.get("x-api-key", "")
+    from factory.core.auth import validate_api_key
+    if not validate_api_key(api_key, bot_id):
+        response_stream.write(b'data: {"error":"unauthorized"}\n\n')
         response_stream.close()
         return
 

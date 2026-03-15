@@ -27,7 +27,7 @@ Browser
                               → Same pipeline, streamed token-by-token
 ```
 
-Local development uses Docker Compose (nginx + LocalStack) and Chalice local server.
+Local development uses Docker Compose (nginx + LocalStack) and a Flask dev server.
 
 ## Project Structure
 
@@ -51,17 +51,14 @@ Local development uses Docker Compose (nginx + LocalStack) and Chalice local ser
 │   ├── build_lambda.sh        ← Package Lambda zip (.build/bot-factory.zip)
 │   ├── package_streaming.sh   ← Package streaming Lambda zip (.build/streaming.zip)
 │   ├── scaffold_bot.py        ← Scaffold a new bot's local structure
-│   ├── sync_tf_config.py      ← Sync Terraform outputs → .chalice/config.json
 │   ├── setup_bot_s3.sh        ← Upload all bots to LocalStack S3 (used by make up)
 │   ├── s3_data.sh             ← S3 data management utility
 │   └── init-dynamodb.sh       ← Create DynamoDB tables in LocalStack
 │
 ├── terraform/                 ← Infrastructure as code (S3, DynamoDB, IAM, Lambda)
-├── app.py                     ← Chalice app (local dev API server)
 ├── dev_server.py              ← Flask dev server (SSE streaming local testing)
 ├── docker-compose.yml         ← Local dev environment (nginx + LocalStack)
-├── Makefile                   ← All commands: run make help
-└── .chalice/                  ← Chalice config + deployment state
+└── Makefile                   ← All commands: run make help
 ```
 
 ## Bots
@@ -80,7 +77,7 @@ Bot source files live in `scripts/bots/{bot_id}/`:
 make up
 ```
 
-This starts Docker (nginx on port 8080, LocalStack on 4566), initializes DynamoDB tables and S3, and starts the Chalice API server on port 8000.
+This starts Docker (nginx on port 8080, LocalStack on 4566), initializes DynamoDB tables and S3, and starts the Flask dev server on port 8001.
 
 ```bash
 # Send a test chat message
@@ -90,14 +87,14 @@ make test-chat BOT=guitar MSG="What is standard tuning?"
 make help
 ```
 
-The frontend runs at `http://localhost:8080`. The API runs at `http://localhost:8000`.
+The frontend runs at `http://localhost:8080`. The API runs at `http://localhost:8001`.
 
 ## Deploy
 
 ### Infrastructure (first time or config changes)
 
 ```bash
-# 1. Build and apply Terraform, then deploy Chalice API
+# 1. Build and apply Terraform
 make deploy-infra
 
 # 2. Deploy the streaming Lambda (separate Function URL)

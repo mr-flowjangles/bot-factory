@@ -10,7 +10,7 @@ locals {
 
 # ─────────────────────────────────────────────────────────────
 # Main API Lambda — handler.handler
-# Serves /chat, /health, chat.html
+# Serves /chat, /health
 # ─────────────────────────────────────────────────────────────
 
 resource "aws_lambda_function" "api" {
@@ -29,6 +29,7 @@ resource "aws_lambda_function" "api" {
       BOT_DATA_BUCKET        = aws_s3_bucket.bot_factory.id
       RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
       LOGS_TABLE_NAME        = aws_dynamodb_table.logs.name
+      API_KEYS_TABLE_NAME    = aws_dynamodb_table.api_keys.name
       RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
       APP_ENV                = "production"
     }
@@ -45,7 +46,7 @@ resource "aws_lambda_function_url" "api" {
   cors {
     allow_origins  = ["*"]
     allow_methods  = ["*"]
-    allow_headers  = ["content-type"]
+    allow_headers  = ["content-type", "x-api-key"]
     expose_headers = ["*"]
     max_age        = 3600
   }
@@ -76,6 +77,7 @@ resource "aws_lambda_function" "streaming" {
       BOT_DATA_BUCKET         = aws_s3_bucket.bot_factory.id
       RAG_TABLE_NAME          = aws_dynamodb_table.rag.name
       LOGS_TABLE_NAME         = aws_dynamodb_table.logs.name
+      API_KEYS_TABLE_NAME     = aws_dynamodb_table.api_keys.name
       RAG_BOT_ID_INDEX_NAME   = "bot_id-index"
       APP_ENV                 = "production"
       AWS_LWA_INVOKE_MODE     = "response_stream"
@@ -95,7 +97,7 @@ resource "aws_lambda_function_url" "streaming" {
   cors {
     allow_origins  = ["*"]
     allow_methods  = ["*"]
-    allow_headers  = ["content-type"]
+    allow_headers  = ["content-type", "x-api-key"]
     expose_headers = ["*"]
     max_age        = 3600
   }

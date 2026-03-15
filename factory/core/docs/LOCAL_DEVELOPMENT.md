@@ -13,12 +13,12 @@ make up
 This does everything in order:
 1. Starts Docker Compose (nginx on :8080, LocalStack on :4566)
 2. Waits for LocalStack to be ready
-3. Creates DynamoDB tables in LocalStack (`BotFactoryRAG`, `BotFactoryHistory`, `BotFactoryLogs`)
+3. Creates DynamoDB tables in LocalStack (`BotFactoryRAG`, `BotFactoryHistory`, `BotFactoryLogs`, `BotFactoryApiKeys`)
 4. Creates the S3 bucket and uploads all bots from `scripts/bots/` to LocalStack S3
-5. Starts the Chalice local API server on :8000
+5. Starts the Flask dev server on :8001
 
 Frontend: `http://localhost:8080`
-API: `http://localhost:8000`
+API: `http://localhost:8001`
 
 ---
 
@@ -53,8 +53,8 @@ Replace `{bot_id}` with `guitar` or whatever bot you're working on.
 # Send a test message via the Makefile (calls lambda_handler directly)
 make test-chat BOT=guitar MSG="What is standard tuning?"
 
-# Or hit the Chalice API directly
-curl -X POST http://localhost:8000/chat \
+# Or hit the Flask API directly
+curl -X POST http://localhost:8001/chat \
   -H "Content-Type: application/json" \
   -d '{"bot_id": "guitar", "message": "What is standard tuning?"}'
 
@@ -67,7 +67,7 @@ curl -X POST http://localhost:8001/chat/stream \
 
 Or open the browser at `http://localhost:8080/{bot_id}.html` and chat directly.
 
-> **Note on streaming locally:** Chalice's local server (port 8000) buffers the full response before sending — you won't see token-by-token streaming. For real SSE streaming during local dev, run `python3 dev_server.py` (Flask, port 8001 by default). Real streaming only works end-to-end via the Lambda Function URL in production.
+> **Note on streaming:** The Flask dev server (`python3 dev_server.py`, port 8001) supports real SSE streaming locally. In production, streaming works end-to-end via the Lambda Function URL.
 
 ---
 
@@ -93,7 +93,7 @@ If Bedrock calls are failing, the most common cause is AWS credentials not being
 
 The embeddings command and `make test-chat` run directly on your host machine, so they use your host shell's AWS credentials. Make sure `~/.aws/credentials` is configured or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are exported in your shell.
 
-For the Chalice server, credentials are passed through from the host environment automatically.
+For the Flask dev server, credentials are passed through from the host environment automatically.
 
 ---
 

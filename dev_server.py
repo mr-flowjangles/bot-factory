@@ -1,6 +1,5 @@
 """
 Local dev server for SSE streaming.
-Bypasses Chalice's Werkzeug buffering.
 
 Usage: python3 dev_server.py
 """
@@ -11,16 +10,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, request, Response, stream_with_context
+from flask import Flask, request, Response, stream_with_context, jsonify
 from flask_cors import CORS
 from factory.core.chatbot import generate_response, generate_response_stream
+from factory.core.auth import validate_api_key
 
 app = Flask(__name__)
-CORS(app)
+
+# Only enable Flask CORS locally — in prod, the Lambda Function URL handles CORS
+if os.getenv("APP_ENV", "local") != "production":
+    CORS(app)
 
 
 @app.route("/")
 def index():
+    if os.getenv("APP_ENV", "local") == "production":
+        return {"status": "ok", "service": "bot-factory-stream"}
     with open("app/chat_stream.html") as f:
         return Response(f.read(), content_type="text/html")
 
@@ -46,6 +51,14 @@ def chat_stream():
         return Response(
             f'data: {json.dumps({"error": "bot_id and message are required"})}\n\n',
             status=400,
+            content_type="text/event-stream",
+        )
+
+    api_key = request.headers.get("X-API-Key", "")
+    if not validate_api_key(api_key, bot_id):
+        return Response(
+            f'data: {json.dumps({"error": "unauthorized"})}\n\n',
+            status=401,
             content_type="text/event-stream",
         )
 
@@ -78,6 +91,10 @@ def chat():
 
     if not bot_id or not message:
         return {"error": "bot_id and message are required"}, 400
+
+    api_key = request.headers.get("X-API-Key", "")
+    if not validate_api_key(api_key, bot_id):
+        return {"error": "unauthorized"}, 401
 
     try:
         result = generate_response(
