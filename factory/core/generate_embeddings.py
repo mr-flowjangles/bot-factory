@@ -192,6 +192,7 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 
     # Summary
     from collections import Counter
+
     cats = Counter(c["category"] for c in chunks)
 
     print("\n" + "=" * 60)
@@ -211,7 +212,13 @@ def generate_bot_embeddings(bot_id: str, force: bool = False):
 def main():
     """CLI entry point."""
     load_dotenv()
-    
+
+    # When running in production, clear LocalStack test credentials
+    # so boto3 falls back to the configured AWS profile
+    if os.getenv("APP_ENV") == "production":
+        os.environ.pop("AWS_ACCESS_KEY_ID", None)
+        os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+
     if len(sys.argv) < 2:
         print("Usage: python -m factory.core.generate_embeddings <bot_id> [--force]")
         print("Example: python -m factory.core.generate_embeddings guitar")

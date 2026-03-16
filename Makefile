@@ -4,7 +4,8 @@
         embed embed-all scaffold scaffold-prod deploy-bot deploy-bot-prod deploy-infra \
         package-streaming deploy-streaming \
         gen-key gen-key-prod env \
-        init local local-stop test-chat help
+        init local local-stop test-chat help \
+        setup-bot setup-bot-prod
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -91,6 +92,11 @@ help:
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "scaffold bot={bot_id}"        "Create a new bot (local)"
 	@printf "  %-38s %s\n" "scaffold-prod bot={bot_id}"   "Create a new bot (production)"
+	@echo ""
+	@echo "  Full Bot Setup"
+	@echo "  ──────────────────────────────────────────────────────────"
+	@printf "  %-38s %s\n" "setup-bot bot={bot_id}"       "Deploy + load + embed + API key (local)"
+	@printf "  %-38s %s\n" "setup-bot-prod bot={bot_id}"  "Deploy + embed + API key (production)"
 	@echo ""
 	@echo "  Cleanup"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -315,7 +321,7 @@ deploy-bot-prod:
 	@echo "→ Syncing data..."
 	aws s3 sync scripts/bots/$(bot)/data/ s3://$(PROD_BUCKET)/bots/$(bot)/data/
 	@echo "→ Generating embeddings..."
-	APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
 	@echo "═══ Bot $(bot) deployed ═══"
 
 # ─────────────────────────────────────────────────────────────
@@ -346,7 +352,7 @@ embed-force:
 embed-prod:
 	@test -n "$(bot)" || (echo "Usage: make embed-prod bot={bot_id}" && exit 1)
 	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first" && exit 1)
-	APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
 
 # ─────────────────────────────────────────────────────────────
 # API Keys
@@ -360,7 +366,7 @@ gen-key:
 gen-key-prod:
 	@test -n "$(bot)" || (echo "Usage: make gen-key-prod bot={bot_id} name={key_name}" && exit 1)
 	@test -n "$(name)" || (echo "Usage: make gen-key-prod bot={bot_id} name={key_name}" && exit 1)
-	APP_ENV=production python3 scripts/gen_api_key.py $(bot) --name $(name)
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production python3 scripts/gen_api_key.py $(bot) --name $(name)
 
 # ─────────────────────────────────────────────────────────────
 # Bot Scaffolding
@@ -373,6 +379,42 @@ scaffold:
 scaffold-prod:
 	@test -n "$(bot)" || (echo "Usage: make scaffold-prod bot={bot_id}" && exit 1)
 	APP_ENV=production python3 scripts/scaffold_bot.py $(bot)
+
+# ─────────────────────────────────────────────────────────────
+# Full Bot Setup (deploy config + load data + embed + API key)
+# ─────────────────────────────────────────────────────────────
+
+setup-bot:
+	@test -n "$(bot)" || (echo "Usage: make setup-bot bot={bot_id}" && exit 1)
+	@echo "═══ Setting up bot: $(bot) (local) ═══"
+	@echo ""
+	@echo "→ Step 1/4: Deploying config + prompt to S3..."
+	$(MAKE) deploy-bot bot=$(bot)
+	@echo ""
+	@echo "→ Step 2/4: Loading data files to S3..."
+	$(MAKE) load-bot bot=$(bot)
+	@echo ""
+	@echo "→ Step 3/4: Generating embeddings..."
+	$(MAKE) embed bot=$(bot)
+	@echo ""
+	@echo "→ Step 4/4: Generating API key..."
+	$(MAKE) gen-key bot=$(bot) name=dev-local
+	@echo ""
+	@echo "═══ Bot $(bot) is ready! ═══"
+	@echo "   Test it: make test-chat BOT=$(bot)"
+
+setup-bot-prod:
+	@test -n "$(bot)" || (echo "Usage: make setup-bot-prod bot={bot_id}" && exit 1)
+	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first (no TF bucket found)" && exit 1)
+	@echo "═══ Setting up bot: $(bot) (production) ═══"
+	@echo ""
+	@echo "→ Step 1/3: Deploying bot to prod (config + data + embeddings)..."
+	$(MAKE) deploy-bot-prod bot=$(bot)
+	@echo ""
+	@echo "→ Step 2/3: Generating prod API key..."
+	$(MAKE) gen-key-prod bot=$(bot) name=prod
+	@echo ""
+	@echo "═══ Bot $(bot) is live in production! ═══"
 
 # ─────────────────────────────────────────────────────────────
 # Cleanup

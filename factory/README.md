@@ -44,13 +44,13 @@ factory/core/
   chunker.py                   # S3 YAML → text chunks
   generate_embeddings.py       # Embedding pipeline (offline, dev-run)
   bot_utils.py                 # Config loader + chat logger
+  auth.py                      # API key validation
 ```
 
 Changes here affect **all bots**. Test against multiple bots before committing.
 
 ### Don't edit — entry points and infra
 ```
-factory/lambda_handler.py      # Lambda entry point (POST /chat, GET /bots, GET /health)
 factory/streaming_handler.py   # Streaming Lambda entry point (Lambda Function URL)
 terraform/                     # Infrastructure as code
 ```
@@ -103,16 +103,6 @@ suggestions:
   - "How do I make pasta from scratch?"
   - "What temp for a medium-rare steak?"
   - "Best way to dice an onion?"
-
-frontend:
-  subtitle: "Your Kitchen Assistant"
-  welcome: "Hey! Ask me anything about cooking."
-  placeholder: "Ask about cooking..."
-  badge: "Beta"
-  nav:
-    - icon: "🍳"
-      label: "Chat"
-      section: "chat"
 ```
 
 See [Config Reference](#config-reference) for all fields.
@@ -139,26 +129,26 @@ Create YAML files in `scripts/bots/{bot_id}/data/`, then upload them to S3. The 
 
 Two entry types are supported:
 
-**Text entries** — content is embedded as-is:
+**String entries** — content is embedded as-is:
 
 ```yaml
 entries:
   - id: knife_basics
-    format: text
+    format: string
     category: "Techniques"
     heading: "Knife Skills"
     content: "The three essential cuts are dice, julienne, and chiffonade..."
 ```
 
-**Structured entries** — a template applied to each item:
+**Object entries** — a template applied to each item:
 
 ```yaml
 entries:
   - id: cooking_temps
-    format: structured
+    format: object
     category: "Temperatures"
     heading: "Protein Cooking Temperatures"
-    template: "{protein} cooked to {doneness}: internal temp {temp}°F. {notes}"
+    template: "{protein} cooked to {doneness}: internal temp {temp}F. {notes}"
     items:
       - protein: "Chicken breast"
         doneness: "done"
@@ -170,7 +160,7 @@ entries:
         notes: "Warm red center."
 ```
 
-The chunker flattens structured entries so each item becomes a standalone text chunk for embedding. Add a `search_terms` field to any entry to improve semantic search recall.
+The chunker flattens object entries so each item becomes a standalone text chunk for embedding. Add a `search_terms` field to any entry to improve semantic search recall.
 
 **Upload data to S3:**
 
@@ -182,56 +172,27 @@ make load-bot bot={bot_id}
 make deploy-bot-prod bot={bot_id}
 ```
 
-### Step 5: Deploy config and prompt to S3
+### Step 5: Deploy and test locally
 
 ```bash
-# Local
-make deploy-bot bot={bot_id}
+# One command does it all: deploy config + load data + embed + API key
+make setup-bot bot={bot_id}
 
-# Production (also uploads data and generates embeddings)
-make deploy-bot-prod bot={bot_id}
+# Test it
+make test-chat BOT={bot_id} MSG="your test question"
 ```
 
-### Step 6: Generate embeddings
+Or start the full local stack and use the chat UI at `http://localhost:8080`.
 
-```bash
-# Local (reads from LocalStack S3, writes to LocalStack DynamoDB)
-make embed bot={bot_id}
-
-# Production
-make embed-prod bot={bot_id}
-```
-
-This runs the full pipeline: the chunker reads your YAML files from S3, Bedrock Titan V2 converts each chunk to a 1024-dimension vector, and the vectors are stored in the `BotFactoryRAG` DynamoDB table tagged with your bot ID.
-
-> **Note:** Bedrock always calls real AWS — LocalStack does not emulate Bedrock. You need real AWS credentials available in your environment.
-
-The `--force` flag skips the confirmation prompt and does a kill-and-fill scoped to your bot ID. Other bots' embeddings are untouched.
-
-### Step 7: Test locally
-
-```bash
-make test-chat BOT={bot_id} MSG="your test question here"
-```
-
-Or start the full local stack and use the chat UI:
-
-```bash
-make up
-# visit http://localhost:8080/{bot_id}.html
-```
-
-### Step 8: Deploy to production
+### Step 6: Deploy to production
 
 ```bash
 # First time: provision infrastructure
 make deploy-infra
-
-# Deploy streaming Lambda (Function URL for real SSE)
 make deploy-streaming
 
-# Deploy bot data + generate production embeddings
-make deploy-bot-prod bot={bot_id}
+# Deploy bot (config + data + embeddings + API key)
+make setup-bot-prod bot={bot_id}
 ```
 
 ## Project Structure
@@ -240,7 +201,6 @@ make deploy-bot-prod bot={bot_id}
 /
 ├── factory/
 │   ├── README.md                  ← you are here
-│   ├── lambda_handler.py          ← Lambda entry point (buffered)
 │   ├── streaming_handler.py       ← Lambda entry point (streaming, Function URL)
 │   └── core/
 │       ├── chatbot.py             ← Orchestrator: retrieval → build messages → Bedrock Claude
@@ -248,16 +208,15 @@ make deploy-bot-prod bot={bot_id}
 │       ├── chunker.py             ← S3 YAML → text chunks
 │       ├── generate_embeddings.py ← chunks → Bedrock Titan V2 → DynamoDB
 │       ├── bot_utils.py           ← Config loader (S3) + chat logger (DynamoDB)
+│       ├── auth.py                ← API key validation (DynamoDB)
 │       └── docs/
 │           ├── CHAT_FLOW.md       ← full trace of a chat request
 │           ├── EMBEDDING_FLOW.md  ← full trace of embedding generation
 │           └── LOCAL_DEVELOPMENT.md ← local dev commands and troubleshooting
 │
 └── scripts/bots/                  ← bot source files (one folder per bot)
-    └── guitar/
-        ├── config.yml             ← bot configuration
-        ├── prompt.yml             ← system prompt for Claude
-        └── data/                  ← knowledge base files (upload to S3 before embedding)
+    ├── RobbAI/                    ← resume AI assistant
+    └── the-fret-detective/        ← guitar learning bot
 ```
 
 ## Config Reference
@@ -292,7 +251,7 @@ make deploy-bot-prod bot={bot_id}
 | Field                  | Type    | Description                                                             |
 | ---------------------- | ------- | ----------------------------------------------------------------------- |
 | `top_k`                | integer | Number of chunks to retrieve. Use 10+ if data has many similar entries. |
-| `similarity_threshold` | float   | Minimum cosine similarity (0.0–1.0). Start at 0.3, tune up if noisy.   |
+| `similarity_threshold` | float   | Minimum cosine similarity (0.0-1.0). Start at 0.3, tune up if noisy.   |
 
 ### bot.boundaries
 
@@ -301,16 +260,6 @@ Free-form key-value pairs. The keys and values are passed to the system prompt t
 ### suggestions (required)
 
 List of starter questions shown as chips in the chat UI.
-
-### frontend (optional)
-
-| Field         | Type   | Description                                                   |
-| ------------- | ------ | ------------------------------------------------------------- |
-| `subtitle`    | string | Shown below the bot name in the header.                       |
-| `welcome`     | string | First message displayed in the chat.                          |
-| `placeholder` | string | Input field hint text.                                        |
-| `badge`       | string | Header badge text (e.g., "Beta", "v1").                       |
-| `nav`         | list   | Left sidebar links. Each item has `icon`, `label`, `section`. |
 
 ## Embedding Notes
 
@@ -326,9 +275,12 @@ If your bot has many similar entries (like The Fret Detective's chord voicings a
 | ---- | ------- | ----- |
 | Start local stack | `make up` | nginx :8080, Flask :8001, LocalStack :4566 |
 | Stop everything | `make down` | |
+| Full local setup | `make setup-bot bot={id}` | Deploy + load + embed + API key |
+| Full prod setup | `make setup-bot-prod bot={id}` | Deploy + embed + API key |
 | Deploy bot data (local) | `make load-bot bot={id}` | Upload data to LocalStack S3 |
 | Deploy config+prompt (local) | `make deploy-bot bot={id}` | Upload config+prompt to LocalStack S3 |
 | Generate embeddings (local) | `make embed bot={id}` | Reads LocalStack S3, writes LocalStack DynamoDB |
+| Generate API key (local) | `make gen-key bot={id} name=dev-local` | Scoped to bot, writes to .env |
 | Send test message | `make test-chat BOT={id} MSG="..."` | Calls lambda_handler directly |
 | Deploy infra (prod) | `make deploy-infra` | Terraform deploy |
 | Deploy streaming (prod) | `make deploy-streaming` | Streaming Lambda + Function URL |

@@ -6,8 +6,9 @@
 set -e
 
 ENDPOINT="http://localhost:4566"
+REGION="${AWS_REGION:-us-east-1}"
 BUCKET="bot-factory-data"
-AWS_CMD="aws --endpoint-url=$ENDPOINT"
+AWS_CMD="aws --endpoint-url=$ENDPOINT --region $REGION"
 BOTS_DIR="scripts/bots"
 
 # Create bucket if it doesn't exist

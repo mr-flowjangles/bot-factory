@@ -10,7 +10,7 @@
 
 # BOT-FACTORY
 
-A serverless chatbot platform deployed on AWS. The frontend is static HTML/CSS/JS served via nginx (local) or S3+CloudFront (production). The backend is two Lambda functions connected to DynamoDB and S3, with AI powered by AWS Bedrock.
+A serverless chatbot platform deployed on AWS. The backend is a streaming Lambda function connected to DynamoDB and S3, with AI powered by AWS Bedrock (Titan V2 embeddings + Claude responses).
 
 ## Architecture
 
@@ -18,13 +18,11 @@ A serverless chatbot platform deployed on AWS. The frontend is static HTML/CSS/J
 Browser
   → CloudFront (production) / nginx (local)
     → S3 (static frontend: HTML, JS, CSS, assets)
-    → API Gateway → Lambda (factory/lambda_handler.py)
-                      → DynamoDB BotFactoryRAG (embeddings)
-                      → DynamoDB BotFactoryLogs (chat logs)
-                      → S3 (bot configs, prompts, knowledge data)
-                      → Bedrock (embeddings + Claude responses)
     → Lambda Function URL → Lambda (factory/streaming_handler.py)
-                              → Same pipeline, streamed token-by-token
+                              → DynamoDB BotFactoryRAG (embeddings)
+                              → DynamoDB BotFactoryLogs (chat logs)
+                              → S3 (bot configs, prompts, knowledge data)
+                              → Bedrock (embeddings + Claude responses)
 ```
 
 Local development uses Docker Compose (nginx + LocalStack) and a Flask dev server.
@@ -36,23 +34,24 @@ Local development uses Docker Compose (nginx + LocalStack) and a Flask dev serve
 ├── app/                       ← Static frontend (HTML, CSS, JS, assets)
 │
 ├── factory/                   ← Lambda source code
-│   ├── lambda_handler.py      ← Buffered chat Lambda (POST /chat, GET /bots, GET /health)
 │   ├── streaming_handler.py   ← Streaming chat Lambda (Function URL, SSE)
 │   └── core/                  ← Shared RAG engine (never bot-specific)
 │       ├── chatbot.py         ← Orchestrator: retrieval → Claude → response
 │       ├── retrieval.py       ← DynamoDB GSI query + cosine similarity search
 │       ├── chunker.py         ← S3 YAML → text chunks
 │       ├── generate_embeddings.py ← chunks → Bedrock Titan V2 → DynamoDB
-│       └── bot_utils.py       ← Config loader (S3), chat logger (DynamoDB)
+│       ├── bot_utils.py       ← Config loader (S3), chat logger (DynamoDB)
+│       └── auth.py            ← API key validation (DynamoDB)
 │
 ├── scripts/
 │   ├── bots/                  ← Bot source files (config, prompt, data)
-│   │   └── guitar/            ← The Fret Detective bot
+│   │   ├── RobbAI/            ← Rob's resume AI assistant
+│   │   └── the-fret-detective/← Guitar learning bot
 │   ├── build_lambda.sh        ← Package Lambda zip (.build/bot-factory.zip)
 │   ├── package_streaming.sh   ← Package streaming Lambda zip (.build/streaming.zip)
 │   ├── scaffold_bot.py        ← Scaffold a new bot's local structure
+│   ├── gen_api_key.py         ← Generate bot-scoped API keys
 │   ├── setup_bot_s3.sh        ← Upload all bots to LocalStack S3 (used by make up)
-│   ├── s3_data.sh             ← S3 data management utility
 │   └── init-dynamodb.sh       ← Create DynamoDB tables in LocalStack
 │
 ├── terraform/                 ← Infrastructure as code (S3, DynamoDB, IAM, Lambda)
@@ -65,11 +64,12 @@ Local development uses Docker Compose (nginx + LocalStack) and a Flask dev serve
 
 Bot source files live in `scripts/bots/{bot_id}/`:
 
-| Bot                | ID       | Description                                     |
-| ------------------ | -------- | ----------------------------------------------- |
-| The Fret Detective | `guitar` | Electric guitar instruction. First factory bot. |
+| Bot                | ID                   | Description                                     |
+| ------------------ | -------------------- | ----------------------------------------------- |
+| RobbAI             | `RobbAI`             | Resume AI assistant on robrose.info              |
+| The Fret Detective | `the-fret-detective` | Electric guitar instruction bot                  |
 
-→ **[Full bot development guide: factory/README.md](factory/README.md)**
+> **[Full bot development guide: factory/README.md](factory/README.md)**
 
 ## Local Development
 
@@ -81,7 +81,7 @@ This starts Docker (nginx on port 8080, LocalStack on 4566), initializes DynamoD
 
 ```bash
 # Send a test chat message
-make test-chat BOT=guitar MSG="What is standard tuning?"
+make test-chat BOT=RobbAI MSG="What does Rob do?"
 
 # See all available commands
 make help
@@ -91,7 +91,7 @@ The frontend runs at `http://localhost:8080`. The API runs at `http://localhost:
 
 ## Deploy
 
-### Infrastructure (first time or config changes)
+### Infrastructure (first time or code changes)
 
 ```bash
 # 1. Build and apply Terraform
@@ -104,7 +104,7 @@ make deploy-streaming
 ### Bot data (per bot, re-run on data changes)
 
 ```bash
-make deploy-bot-prod bot=guitar
+make deploy-bot-prod bot=RobbAI
 ```
 
 This uploads config, prompt, and data to S3, then generates embeddings in production DynamoDB.

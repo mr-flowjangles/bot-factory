@@ -51,18 +51,21 @@ def gen_key(bot_id: str, name: str, endpoint_url: str = None, table_name: str = 
     print(f"\n  Use this header in requests:")
     print(f"  X-API-Key: {api_key}")
 
-    # Update .env if it exists
+    # Update .env with bot-specific key
     env_path = Path(".env")
+    is_prod = os.getenv("APP_ENV") == "production"
     if env_path.exists():
         env_text = env_path.read_text()
-        if re.search(r"^API_KEY=.*$", env_text, re.MULTILINE):
-            env_text = re.sub(r"^API_KEY=.*$", f"API_KEY={api_key}", env_text, flags=re.MULTILINE)
-            env_path.write_text(env_text)
-            print(f"\n  Updated API_KEY in .env")
+        bot_name = bot_id.upper().replace('-', '_')
+        bot_env_key = f"{bot_name}_PROD_API_KEY" if is_prod else f"{bot_name}_API_KEY"
+
+        if re.search(rf"^{bot_env_key}=.*$", env_text, re.MULTILINE):
+            env_text = re.sub(rf"^{bot_env_key}=.*$", f"{bot_env_key}={api_key}", env_text, flags=re.MULTILINE)
         else:
-            with open(env_path, "a") as f:
-                f.write(f"\nAPI_KEY={api_key}\n")
-            print(f"\n  Added API_KEY to .env")
+            env_text += f"{bot_env_key}={api_key}\n"
+
+        env_path.write_text(env_text)
+        print(f"\n  Updated .env: {bot_env_key}")
     print()
 
     return api_key

@@ -107,7 +107,8 @@ def build_messages(user_message: str, context: str, conversation_history: list[d
 ## User Question:
 {user_message}
 
-Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. If you can't answer from the context, say so politely."""
+Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. \
+If you can't answer from the context, say so politely."""
 
     messages.append({"role": "user", "content": [{"text": user_content}]})
     return messages
@@ -147,7 +148,9 @@ def generate_response(
     )
     t3 = time.time()
 
-    logger.info(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock={t3-t2:.3f}s | total={t3-t0:.3f}s")
+    logger.info(
+        f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock={t3-t2:.3f}s | total={t3-t0:.3f}s"
+    )
 
     return {
         "response": response["output"]["message"]["content"][0]["text"],

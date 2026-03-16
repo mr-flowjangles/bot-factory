@@ -231,6 +231,51 @@
   #chatArea::-webkit-scrollbar { width: 6px; }
   #chatArea::-webkit-scrollbar-track { background: transparent; }
   #chatArea::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .sources-panel {
+    max-width: 720px;
+    align-self: flex-start;
+    animation: msgIn 0.25s ease-out;
+  }
+
+  .sources-toggle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 0;
+    letter-spacing: 0.03em;
+    transition: color 0.15s;
+  }
+
+  .sources-toggle:hover { color: var(--accent); }
+
+  .sources-list {
+    display: none;
+    margin-top: 6px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  .sources-list.open { display: block; }
+
+  .source-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    color: var(--text-muted);
+  }
+
+  .source-row .heading { color: var(--text); flex: 1; }
+  .source-row .category { color: var(--text-muted); }
+  .source-row .score { color: var(--accent); min-width: 48px; text-align: right; }
 </style>
 </head>
 <body>
@@ -331,7 +376,7 @@
       const apiKey = apiKeyInput.value.trim();
       if (apiKey) headers['X-API-Key'] = apiKey;
 
-      const res = await fetch(base + '/chat/stream', {
+      const res = await fetch(base + '/chat', {
         method: 'POST',
         headers,
         body: JSON.stringify({ bot_id, message: text })
@@ -356,6 +401,8 @@
       botDiv.className = 'msg bot';
       chatArea.appendChild(botDiv);
 
+      let sourcesData = null;
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -378,13 +425,46 @@
             const data = JSON.parse(payload);
             if (data.error) {
               fullText += 'Error: ' + data.error;
-            } else if (data.token) {
+            } else if (data.type === 'sources') {
+              sourcesData = data.sources;
+            } else if (data.type === 'token' || data.token) {
               fullText += data.token;
             }
             botDiv.textContent = fullText;
             chatArea.scrollTop = chatArea.scrollHeight;
           } catch {}
         }
+      }
+
+      if (sourcesData && sourcesData.length > 0) {
+        const panel = document.createElement('div');
+        panel.className = 'sources-panel';
+
+        const toggle = document.createElement('button');
+        toggle.className = 'sources-toggle';
+        toggle.textContent = '> ' + sourcesData.length + ' sources retrieved';
+        panel.appendChild(toggle);
+
+        const list = document.createElement('div');
+        list.className = 'sources-list';
+        for (const s of sourcesData) {
+          const row = document.createElement('div');
+          row.className = 'source-row';
+          row.innerHTML =
+            '<span class="heading">' + (s.heading || s.category) + '</span>' +
+            '<span class="category">' + s.category + '</span>' +
+            '<span class="score">' + (s.similarity * 100).toFixed(1) + '%</span>';
+          list.appendChild(row);
+        }
+        panel.appendChild(list);
+
+        toggle.addEventListener('click', () => {
+          list.classList.toggle('open');
+          toggle.textContent = (list.classList.contains('open') ? 'v ' : '> ') + sourcesData.length + ' sources retrieved';
+        });
+
+        chatArea.appendChild(panel);
+        chatArea.scrollTop = chatArea.scrollHeight;
       }
 
       const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
