@@ -27,6 +27,7 @@ GSI_NAME = os.getenv("RAG_BOT_ID_INDEX_NAME", "bot_id-index")
 # Per-bot embedding cache — survives across warm Lambda invocations
 _embeddings_cache = {}
 
+
 def get_dynamodb_connection():
     if os.getenv("APP_ENV", "local") == "production":
         return boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
@@ -129,13 +130,15 @@ def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_thr
         similarity = cosine_similarity(query_embedding, stored_embedding)
 
         if similarity >= similarity_threshold:
-            results.append({
-                "id": item["pk"],
-                "category": item.get("category", "General"),
-                "heading": item.get("heading", ""),
-                "text": item["text"],
-                "similarity": float(similarity),
-            })
+            results.append(
+                {
+                    "id": item["pk"],
+                    "category": item.get("category", "General"),
+                    "heading": item.get("heading", ""),
+                    "text": item["text"],
+                    "similarity": float(similarity),
+                }
+            )
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
 

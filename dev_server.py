@@ -10,9 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, request, Response, stream_with_context, jsonify
+from flask import Flask, request, Response, stream_with_context
 from flask_cors import CORS
-from factory.core.chatbot import generate_response, generate_response_stream
+from factory.core.chatbot import generate_response_stream
+from factory.core.retrieval import retrieve_relevant_chunks
+from factory.core.bot_utils import load_bot_config
 from factory.core.auth import validate_api_key
 
 app = Flask(__name__)
@@ -30,19 +32,14 @@ def index():
         return Response(f.read(), content_type="text/html")
 
 
-@app.route("/test")
-def test_page():
-    with open("app/test.html") as f:
-        return Response(f.read(), content_type="text/html")
-
 
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}
 
 
-@app.route("/chat/stream", methods=["POST"])
-def chat_stream():
+@app.route("/chat", methods=["POST"])
+def chat():
     body = request.get_json()
     bot_id = body.get("bot_id")
     message = body.get("message")
@@ -62,13 +59,28 @@ def chat_stream():
             content_type="text/event-stream",
         )
 
+    config = load_bot_config(bot_id)
+    rag = config.get("bot", {}).get("rag", {})
+    top_k = rag.get("top_k", 5)
+    similarity_threshold = rag.get("similarity_threshold", 0.3)
+
     def generate():
         try:
+            # Emit sources for local debug UI
+            chunks = retrieve_relevant_chunks(
+                bot_id=bot_id, query=message, top_k=top_k, similarity_threshold=0.0,
+            )
+            sources = [
+                {"heading": c.get("heading", ""), "category": c["category"], "similarity": round(c["similarity"], 4)}
+                for c in chunks
+            ]
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+
             for token in generate_response_stream(
                 bot_id=bot_id,
                 user_message=message,
-                top_k=5,
-                similarity_threshold=0.3,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
                 conversation_history=[],
             ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
@@ -81,32 +93,6 @@ def chat_stream():
         content_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@app.route("/chat", methods=["POST"])
-def chat():
-    body = request.get_json()
-    bot_id = body.get("bot_id")
-    message = body.get("message")
-
-    if not bot_id or not message:
-        return {"error": "bot_id and message are required"}, 400
-
-    api_key = request.headers.get("X-API-Key", "")
-    if not validate_api_key(api_key, bot_id):
-        return {"error": "unauthorized"}, 401
-
-    try:
-        result = generate_response(
-            bot_id=bot_id,
-            user_message=message,
-            top_k=5,
-            similarity_threshold=0.3,
-            conversation_history=[],
-        )
-        return {"response": result["response"], "sources": result["sources"]}
-    except Exception as e:
-        return {"error": str(e)}, 500
 
 
 if __name__ == "__main__":

@@ -4,52 +4,36 @@ A trace of every file and function called when a user sends a message to a bot.
 
 ---
 
-## Entry Points
+## Entry Point
 
-There are two Lambda entry points — one for buffered responses, one for streaming:
+**Streaming:** `POST /chat` via Lambda Function URL → `factory/streaming_handler.py`
 
-**Buffered:** `POST /chat` via API Gateway → `factory/lambda_handler.py`
-
-**Streaming:** `POST` via Lambda Function URL → `factory/streaming_handler.py`
-
-Request body (both):
+Request body:
 ```json
 {
-  "bot_id": "guitar",
-  "message": "What chord shapes work at fret 7?",
-  "conversation_history": []
+  "bot_id": "RobbAI",
+  "message": "What does Rob do?"
 }
 ```
 
----
-
-## Path A — Buffered (`lambda_handler.py`)
-
-### 1. `lambda_handler.py` — `lambda_handler()`
-
-AWS Lambda invokes this function with the API Gateway event.
-
-- Extracts `method` and `path` from `event["requestContext"]["http"]` and `event["rawPath"]`
-- Routes `POST /chat` → `handle_chat()`
-- Routes `GET /bots` → `handle_list_bots()`
-- Routes `GET /health` → `handle_health()`
+Header: `X-API-Key: bfk_...`
 
 ---
 
-### 2. `lambda_handler.py` — `handle_chat()`
+## Flow — Streaming (`streaming_handler.py`)
 
-- Parses `bot_id`, `message`, `conversation_history` from the request body
-- Calls `load_bot_config(bot_id)` from `core/bot_utils.py`
-  - Fetches `s3://<bucket>/bots/{bot_id}/config.yml` from S3, cached per bot
-  - Reads `bot.rag.top_k` and `bot.rag.similarity_threshold`
-- Calls `generate_response()` from `core/chatbot.py` (see section 3)
-- Calls `log_chat_interaction()` from `core/bot_utils.py`
-  - Writes question, response, and source categories to `BotFactoryLogs` DynamoDB table
-- Returns `{"response": "...", "sources": [...]}`
+Uses Lambda Response Streaming (invoked by a Lambda Function URL with `RESPONSE_STREAM` mode), which bypasses API Gateway and allows token-by-token delivery via SSE.
 
----
+### 1. `streaming_handler.py` — `handler(event, response_stream)`
 
-### 3. `core/chatbot.py` — `generate_response()`
+AWS Lambda invokes this function with the HTTP event and a writable `response_stream` object.
+
+- Parses `bot_id` and `message` from the request body
+- Validates API key via `auth.validate_api_key()`
+- Loads bot config via `bot_utils.load_bot_config(bot_id)` — reads `top_k` and `similarity_threshold` from `bot.rag`
+- Calls `generate_response_stream()` from `core/chatbot.py`
+
+### 2. `core/chatbot.py` — `generate_response_stream()`
 
 Orchestrates the full RAG pipeline.
 
@@ -59,7 +43,7 @@ relevant_chunks = retrieve_relevant_chunks(
     bot_id, user_message, top_k, similarity_threshold
 )
 ```
-→ delegates to `core/retrieval.py` (see section 4 below)
+→ delegates to `core/retrieval.py` (see section 3 below)
 
 **Step B — Format context:**
 ```python
@@ -68,7 +52,6 @@ context = format_context_for_llm(relevant_chunks)
 → joins chunks into `[CATEGORY]\ntext` blocks separated by `---`
 
 **Step C — Build messages array:**
-- Loops over `conversation_history`, appending each as `{"role": ..., "content": [{"text": ...}]}`
 - Appends current user message with context injected:
   ```
   ## Relevant Context:
@@ -87,16 +70,18 @@ system_prompt = load_system_prompt(bot_id)
 - Injects `{current_date}` into the template
 - Caches result for subsequent requests
 
-**Step E — Initialize Bedrock client:**
-```python
-client = get_bedrock_client()
-```
-- Checks `_bedrock_client` global (lazy-init, persists on warm Lambda)
-- On cold start: creates `boto3.client("bedrock-runtime")` using IAM role
+**Step E — Stream response from Bedrock:**
+- Uses `client.converse_stream()` instead of `client.converse()`
+- Yields each text chunk as it arrives:
+  ```python
+  for event in response["stream"]:
+      if "contentBlockDelta" in event:
+          yield event["contentBlockDelta"]["delta"]["text"]
+  ```
 
 ---
 
-### 4. `core/retrieval.py` — `retrieve_relevant_chunks()`
+### 3. `core/retrieval.py` — `retrieve_relevant_chunks()`
 
 **Step A — Embed the query:**
 ```python
@@ -132,45 +117,7 @@ Each result: `{id, category, heading, text, similarity}`
 
 ---
 
-### 5. Back in `core/chatbot.py` — Bedrock Claude call
-
-With context formatted and messages built:
-
-> **BEDROCK CALL #2** — `client.converse()`
-> - Model: `us.anthropic.claude-sonnet-4-20250514-v1:0`
-> - System: bot's system prompt (from `prompt.yml` in S3)
-> - Messages: conversation history + current user message with injected context
-> - Config: `maxTokens=1000`
-> - Output: complete response text
-
-Returns `{"response": "...", "sources": [...]}` to `handle_chat()`.
-
----
-
-## Path B — Streaming (`streaming_handler.py`)
-
-Uses Lambda Response Streaming (invoked by a Lambda Function URL with `RESPONSE_STREAM` mode), which bypasses API Gateway and allows token-by-token delivery.
-
-### 1. `streaming_handler.py` — `handler(event, response_stream)`
-
-AWS Lambda invokes this function with the HTTP event and a writable `response_stream` object.
-
-- Parses `bot_id` and `message` from the request body
-- Validates both are present; writes error and closes stream on failure
-- Calls `generate_response_stream()` from `core/chatbot.py`
-
-### 2. `core/chatbot.py` — `generate_response_stream()`
-
-Same pipeline as `generate_response()` through steps A–E above, but:
-- Uses `client.converse_stream()` instead of `client.converse()`
-- Yields each text chunk as it arrives:
-  ```python
-  for event in response["stream"]:
-      if "contentBlockDelta" in event:
-          yield event["contentBlockDelta"]["delta"]["text"]
-  ```
-
-### 3. Back in `streaming_handler.py`
+### 4. Back in `streaming_handler.py` — SSE output
 
 For each yielded token:
 ```python
@@ -185,17 +132,18 @@ Closes with `data: [DONE]\n\n` and `response_stream.close()`.
 ## Summary Diagram
 
 ```
-POST /chat (API Gateway)                POST via Function URL (SSE)
-        │                                       │
-        ▼                                       ▼
-lambda_handler.py                   streaming_handler.py
-  handle_chat()                        handler()
-  │  load_bot_config() → S3            │
-  │                                    │
-  ▼                                    ▼
-chatbot.py                          chatbot.py
-  generate_response()                 generate_response_stream()
-  │                                   │
+POST via Function URL (SSE)
+        │
+        ▼
+streaming_handler.py
+  handler()
+  │  validate_api_key() → DynamoDB BotFactoryApiKeys
+  │  load_bot_config() → S3 (top_k, similarity_threshold)
+  │
+  ▼
+chatbot.py
+  generate_response_stream()
+  │
   ├─► retrieval.py — retrieve_relevant_chunks()
   │     │
   │     ├─► BEDROCK #1 — Titan V2 (embed query)
@@ -214,8 +162,7 @@ chatbot.py                          chatbot.py
   │
   └─► BEDROCK #2 — Claude Sonnet
         us.anthropic.claude-sonnet-4-20250514-v1:0
-        converse()           →  full response text
-        converse_stream()    →  streamed token chunks
+        converse_stream() → streamed token chunks
 ```
 
 ---
@@ -225,7 +172,7 @@ chatbot.py                          chatbot.py
 | # | Where | Function | Model | Purpose |
 |---|-------|----------|-------|---------|
 | 1 | `retrieval.py` | `generate_query_embedding()` | `amazon.titan-embed-text-v2:0` | Convert user question to 1024-dim vector |
-| 2 | `chatbot.py` | `generate_response()` / `generate_response_stream()` | `claude-sonnet-4-20250514` | Generate response with RAG context injected |
+| 2 | `chatbot.py` | `generate_response_stream()` | `claude-sonnet-4-20250514` | Generate response with RAG context injected |
 
 ---
 
@@ -234,7 +181,8 @@ chatbot.py                          chatbot.py
 | Resource | Name | Purpose |
 |----------|------|---------|
 | DynamoDB table | `BotFactoryRAG` | Stores embeddings (pk: `{bot_id}_{chunk_id}`, GSI: `bot_id-index`) |
-| DynamoDB table | `BotFactoryLogs` | Chat interaction logs (buffered path only) |
+| DynamoDB table | `BotFactoryLogs` | Chat interaction logs |
+| DynamoDB table | `BotFactoryApiKeys` | API key validation |
 | S3 bucket | `<BOT_DATA_BUCKET>` | Bot configs, prompts, data files |
 | Bedrock model | `amazon.titan-embed-text-v2:0` | Query embedding |
 | Bedrock model | `us.anthropic.claude-sonnet-4-20250514-v1:0` | Response generation |

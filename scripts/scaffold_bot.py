@@ -69,6 +69,32 @@ PROMPT_TEMPLATE = """system_prompt: |
   - Be helpful and concise
 """
 
+DATA_TEMPLATE = """meta:
+  bot_id: {bot_id}
+  title: "<topic_title>"
+  version: "1"
+  date: "<YYYY-MM-DD>"
+
+entries:
+  - id: <unique_entry_id>
+    format: string
+    category: <category_name>
+    heading: <entry heading>
+    search_terms: "<comma-separated search terms>"
+    content: |
+      <Your knowledge base content here.>
+
+  - id: <unique_entry_id_2>
+    format: object
+    category: <category_name>
+    heading: <entry heading>
+    search_terms: "<comma-separated search terms>"
+    template: "{{item_field}}: {{item_description}}"
+    items:
+      - item_field: <field_value>
+        item_description: <description>
+"""
+
 LOAD_README = """# {bot_id} — Knowledge Base Source Files
 
 Drop YAML knowledge base files here, then run:
@@ -133,6 +159,10 @@ def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-d
         data_dir.mkdir()
         print(f"  ✅ Created {data_dir}/")
 
+        data_template_path = data_dir / "00-template.yml"
+        data_template_path.write_text(DATA_TEMPLATE.format(bot_id=bot_id))
+        print(f"  ✅ Created {data_template_path}")
+
     # --- S3: ensure bucket exists (non-fatal) ---
     try:
         s3 = get_s3_client(endpoint_url)
@@ -145,7 +175,8 @@ def scaffold(bot_id: str, endpoint_url: str = None, bucket: str = "bot-factory-d
     print(f"   Local files created:")
     print(f"     scripts/bots/{bot_id}/config.yml     ← edit bot settings")
     print(f"     scripts/bots/{bot_id}/prompt.yml     ← edit system prompt")
-    print(f"     scripts/bots/{bot_id}/data/           ← drop knowledge base YAMLs here")
+    print(f"     scripts/bots/{bot_id}/data/              ← drop knowledge base YAMLs here")
+    print(f"     scripts/bots/{bot_id}/data/00-template.yml ← data file template")
     print(f"\n   Next steps:")
     print(f"   1. Edit scripts/bots/{bot_id}/config.yml")
     print(f"   2. Edit scripts/bots/{bot_id}/prompt.yml")

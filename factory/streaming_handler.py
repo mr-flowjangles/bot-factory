@@ -22,10 +22,9 @@ def handler(event, *args):
     - Direct invocation: (event, context)
     """
     if len(args) == 2:
-        response_stream, context = args
+        response_stream = args[0]
         is_streaming = True
     else:
-        context = args[0]
         response_stream = None
         is_streaming = False
 
@@ -70,6 +69,7 @@ def handler(event, *args):
     headers = event.get("headers", {})
     api_key = headers.get("x-api-key", "")
     from factory.core.auth import validate_api_key
+
     if not validate_api_key(api_key, bot_id):
         response_stream.write(b'data: {"error":"unauthorized"}\n\n')
         response_stream.close()
@@ -82,14 +82,20 @@ def handler(event, *args):
 
     try:
         from factory.core.chatbot import generate_response_stream
+        from factory.core.bot_utils import load_bot_config
 
-        logger.info(f"[stream:{bot_id}] query='{message[:60]}'")
+        config = load_bot_config(bot_id)
+        rag = config.get("bot", {}).get("rag", {})
+        top_k = rag.get("top_k", 5)
+        similarity_threshold = rag.get("similarity_threshold", 0.3)
+
+        logger.info(f"[stream:{bot_id}] query='{message[:60]}' top_k={top_k}")
 
         for token in generate_response_stream(
             bot_id=bot_id,
             user_message=message,
-            top_k=5,
-            similarity_threshold=0.3,
+            top_k=top_k,
+            similarity_threshold=similarity_threshold,
             conversation_history=[],
         ):
             chunk = f"data: {json.dumps({'token': token})}\n\n"
