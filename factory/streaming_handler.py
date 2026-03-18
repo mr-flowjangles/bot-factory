@@ -118,9 +118,8 @@ def handler(event, *args):
             chunk = f"data: {json.dumps({'token': token})}\n\n"
             response_stream.write(chunk.encode("utf-8"))
 
-        response_stream.write(b"data: [DONE]\n\n")
-
-        # Trigger self-heal if confidence is low
+        # Invoke self-heal BEFORE [DONE] — all tokens are already streamed,
+        # but Lambda can freeze the container after the stream closes.
         top_score = metadata.get("top_score", 1.0)
         if self_heal_enabled and top_score < confidence_threshold:
             logger.info(
@@ -128,6 +127,8 @@ def handler(event, *args):
                 f"— invoking self-heal"
             )
             invoke_self_heal_async(bot_id, message, config)
+
+        response_stream.write(b"data: [DONE]\n\n")
 
     except Exception as e:
         logger.error(f"[stream:{bot_id}] error: {e}", exc_info=True)

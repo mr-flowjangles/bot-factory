@@ -104,9 +104,8 @@ def chat():
                 metadata_out=metadata,
             ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
-            yield "data: [DONE]\n\n"
-
-            # Trigger self-heal if confidence is low
+            # Invoke self-heal BEFORE [DONE] — all tokens are already streamed,
+            # but Lambda can freeze the container after [DONE] so we must fire first.
             top_score = metadata.get("top_score", 1.0)
             if self_heal_enabled and top_score < confidence_threshold:
                 app.logger.info(
@@ -114,6 +113,8 @@ def chat():
                     f"— spawning self-heal"
                 )
                 invoke_self_heal_async(bot_id, message, config)
+
+            yield "data: [DONE]\n\n"
 
         except Exception as e:
             yield f'data: {json.dumps({"error": str(e)})}\n\n'

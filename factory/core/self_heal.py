@@ -47,8 +47,18 @@ def get_pending_result(bot_id: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# S3 + Bedrock clients
+# S3 + Bedrock + Lambda clients
 # ---------------------------------------------------------------------------
+
+_lambda_client = None
+
+
+def _get_lambda_client():
+    """Cached boto3 Lambda client — avoids cold-start overhead on every invoke."""
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return _lambda_client
 
 
 def _get_s3_client():
@@ -373,12 +383,12 @@ def invoke_self_heal_async(bot_id: str, question: str, config: dict):
         thread.start()
         return
 
-    # Production — invoke Lambda async
+    # Production — invoke Lambda async (reuse cached client for speed)
     function_name = os.getenv("SELF_HEAL_FUNCTION_NAME", "bot-factory-self-heal")
     payload = json.dumps({"bot_id": bot_id, "question": question, "config": config})
 
     try:
-        client = boto3.client("lambda", region_name=os.getenv("AWS_REGION", "us-east-1"))
+        client = _get_lambda_client()
         client.invoke(
             FunctionName=function_name,
             InvocationType="Event",  # async, fire-and-forget
