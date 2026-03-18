@@ -1,0 +1,71 @@
+# Self-Heal Test Questions
+# Each question has an expected behavior:
+#   should_heal    — unknown topic, should trigger self-heal
+#   should_skip    — bot already knows this, should NOT self-heal
+#   should_reject  — out of domain or gibberish, boundary check should block
+#   should_filter  — too short, filtered before pipeline starts
+
+questions:
+  # --- Should trigger self-heal (knowledge gaps) ---
+  - text: "What is travis picking and how do I learn it?"
+    expect: should_heal
+
+  - text: "How do I play harmonics on electric guitar?"
+    expect: should_heal
+
+  - text: "What is drop D tuning and what songs use it?"
+    expect: should_heal
+
+  - text: "How do I play fingerstyle on electric guitar?"
+    expect: should_heal
+
+  - text: "What is a capo and when should I use one?"
+    expect: should_heal
+
+  - text: "How do I read a chord chart?"
+    expect: should_heal
+
+  - text: "What are open tunings and when would I use them?"
+    expect: should_heal
+
+  - text: "How do I play chicken picking on electric guitar?"
+    expect: should_heal
+
+  # --- Should skip (bot already knows — high confidence) ---
+  - text: "What are the parts of an electric guitar?"
+    expect: should_skip
+
+  - text: "How do I do hammer-ons and pull-offs?"
+    expect: should_skip
+
+  - text: "How do I do a barre chord?"
+    expect: should_skip
+
+  - text: "What is palm muting technique?"
+    expect: should_skip
+
+  # --- Should reject (out of domain / gear) ---
+  - text: "What is the best delay pedal for ambient music?"
+    expect: should_reject
+
+  - text: "Can you recommend a good guitar amplifier?"
+    expect: should_reject
+
+  - text: "What strings should I buy for my acoustic guitar?"
+    expect: should_reject
+
+  - text: "What are the different types of guitar pickups and how do they sound?"
+    expect: should_reject
+
+  - text: "What is the best recipe for chocolate cake?"
+    expect: should_reject
+
+  # --- Should filter (too short / gibberish) ---
+  - text: "hi"
+    expect: should_filter
+
+  - text: "thanks"
+    expect: should_filter
+
+  - text: "ok cool"
+    expect: should_filter

@@ -78,6 +78,15 @@ def get_cached_embeddings(bot_id: str) -> list[dict]:
     return items
 
 
+def invalidate_bot_cache(bot_id: str):
+    """Clear cached embeddings for a bot so the next request reloads from DynamoDB."""
+    if bot_id in _embeddings_cache:
+        del _embeddings_cache[bot_id]
+        logger.info(f"[retrieval:{bot_id}] cache INVALIDATED")
+    else:
+        logger.info(f"[retrieval:{bot_id}] cache invalidate — nothing cached")
+
+
 # ---------------------------------------------------------------------------
 # Bedrock query embedding
 # ---------------------------------------------------------------------------

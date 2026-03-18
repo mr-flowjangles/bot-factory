@@ -5,7 +5,8 @@
         package-streaming deploy-streaming \
         gen-key gen-key-prod env \
         init local local-stop test-chat help \
-        setup-bot setup-bot-prod
+        setup-bot setup-bot-prod \
+        sync-data
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -45,6 +46,7 @@ help:
 	@echo "  Testing"
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "test-chat BOT={id} [MSG=\"..\"]" "Send a test message (default: hi)"
+	@printf "  %-38s %s\n" "test-self-heal"                "Run self-heal pipeline tests (server must be running)"
 	@echo ""
 	@echo "  Code Quality"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -76,6 +78,7 @@ help:
 	@echo "  ──────────────────────────────────────────────────────────"
 	@printf "  %-38s %s\n" "load-bot bot={bot_id}"        "Sync scripts/bots/{bot_id}/data/ to S3"
 	@printf "  %-38s %s\n" "deploy-bot bot={bot_id}"      "Upload config.yml + prompt.yml to S3 (local)"
+	@printf "  %-38s %s\n" "sync-data [bot={bot_id}]"     "Pull new data files from prod S3 to local"
 	@echo ""
 	@echo "  Embeddings"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -134,6 +137,7 @@ up:
 	@sleep 5
 	$(MAKE) dynamo-init
 	$(MAKE) s3-init
+	-$(MAKE) sync-data
 	-$(MAKE) local-stop
 	$(MAKE) local
 
@@ -188,6 +192,9 @@ test-chat:
 		'requestContext': {'http': {'method': 'POST'}}, \
 		'body': json.dumps({'bot_id': '$(BOT)', 'message': '$(or $(MSG),hi)'}) \
 	}, None); print(json.dumps(json.loads(result['body']), indent=2))"
+
+test-self-heal:
+	python3 scripts/test_self_heal.py
 
 # ─────────────────────────────────────────────────────────────
 # Code Quality
@@ -336,6 +343,13 @@ deploy-bot:
 	@test -n "$(bot)" || (echo "Usage: make deploy-bot bot={bot_id}" && exit 1)
 	$(AWS) s3 cp scripts/bots/$(bot)/config.yml $(S3_BUCKET)/bots/$(bot)/config.yml
 	$(AWS) s3 cp scripts/bots/$(bot)/prompt.yml $(S3_BUCKET)/bots/$(bot)/prompt.yml
+
+sync-data:
+ifdef bot
+	bash scripts/sync_s3_data.sh $(bot)
+else
+	bash scripts/sync_s3_data.sh
+endif
 
 # ─────────────────────────────────────────────────────────────
 # Embeddings

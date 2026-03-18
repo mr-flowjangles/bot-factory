@@ -137,6 +137,31 @@ def store_embeddings(table, chunks: list):
     print("  Done -- {} embeddings stored".format(len(chunks)))
 
 
+def embed_and_store_single(bot_id: str, entry: dict):
+    """Generate embedding and store a single entry (additive, no delete).
+
+    Args:
+        bot_id: The bot this entry belongs to.
+        entry: Dict with keys: id, category, heading, text.
+    """
+    bedrock_client = get_bedrock_client()
+    embedding = generate_embedding(bedrock_client, entry["text"])
+
+    dynamodb = get_dynamodb_connection()
+    table = dynamodb.Table(RAG_TABLE_NAME)
+
+    item = {
+        "pk": f"{bot_id}_{entry['id']}",
+        "bot_id": bot_id,
+        "category": entry.get("category", "General"),
+        "heading": entry.get("heading", ""),
+        "text": entry["text"],
+        "embedding": [Decimal(str(x)) for x in embedding],
+    }
+    table.put_item(Item=item)
+    print(f"  Stored embedding for {bot_id}/{entry['id']}")
+
+
 def bot_embeddings_exist(table, bot_id: str) -> bool:
     """Check if this bot already has embeddings in the table."""
     response = table.scan()

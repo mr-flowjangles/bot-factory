@@ -6,6 +6,7 @@ Usage: python3 dev_server.py
 
 import json
 import os
+import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,6 +17,7 @@ from factory.core.chatbot import generate_response_stream
 from factory.core.retrieval import retrieve_relevant_chunks
 from factory.core.bot_utils import load_bot_config
 from factory.core.auth import validate_api_key
+from factory.core.self_heal import run_self_heal, get_pending_result
 
 app = Flask(__name__)
 
@@ -32,7 +34,6 @@ def index():
         return Response(f.read(), content_type="text/html")
 
 
-
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}
@@ -43,6 +44,7 @@ def chat():
     body = request.get_json()
     bot_id = body.get("bot_id")
     message = body.get("message")
+    conversation_history = body.get("conversation_history", [])
 
     if not bot_id or not message:
         return Response(
@@ -64,11 +66,28 @@ def chat():
     top_k = rag.get("top_k", 5)
     similarity_threshold = rag.get("similarity_threshold", 0.3)
 
+    # Check for pending self-heal results from a previous request
+    pending = get_pending_result(bot_id)
+
+    # Self-heal config
+    agentic = config.get("bot", {}).get("agentic", {})
+    self_heal_enabled = agentic.get("self_heal", False)
+    confidence_threshold = agentic.get("confidence_threshold", 0.5)
+
     def generate():
         try:
+            # Piggyback: notify user about previously auto-learned content
+            if pending:
+                topic = pending.get("topic", "a new topic")
+                heal_msg = f"I just learned about {topic}! Try asking me again."
+                yield f"data: {json.dumps({'type': 'self_heal', 'message': heal_msg})}\n\n"
+
             # Emit sources for local debug UI
             chunks = retrieve_relevant_chunks(
-                bot_id=bot_id, query=message, top_k=top_k, similarity_threshold=0.0,
+                bot_id=bot_id,
+                query=message,
+                top_k=top_k,
+                similarity_threshold=0.0,
             )
             sources = [
                 {"heading": c.get("heading", ""), "category": c["category"], "similarity": round(c["similarity"], 4)}
@@ -76,15 +95,32 @@ def chat():
             ]
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
+            metadata = {}
             for token in generate_response_stream(
                 bot_id=bot_id,
                 user_message=message,
                 top_k=top_k,
                 similarity_threshold=similarity_threshold,
-                conversation_history=[],
+                conversation_history=conversation_history,
+                metadata_out=metadata,
             ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
             yield "data: [DONE]\n\n"
+
+            # Trigger self-heal if confidence is low
+            top_score = metadata.get("top_score", 1.0)
+            if self_heal_enabled and top_score < confidence_threshold:
+                app.logger.info(
+                    f"[self_heal:{bot_id}] low confidence ({top_score:.3f} < {confidence_threshold}) "
+                    f"— spawning background self-heal"
+                )
+                thread = threading.Thread(
+                    target=run_self_heal,
+                    args=(bot_id, message, config),
+                    daemon=True,
+                )
+                thread.start()
+
         except Exception as e:
             yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
