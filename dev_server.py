@@ -6,7 +6,6 @@ Usage: python3 dev_server.py
 
 import json
 import os
-import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,7 +16,7 @@ from factory.core.chatbot import generate_response_stream
 from factory.core.retrieval import retrieve_relevant_chunks
 from factory.core.bot_utils import load_bot_config
 from factory.core.auth import validate_api_key
-from factory.core.self_heal import run_self_heal, get_pending_result
+from factory.core.self_heal import invoke_self_heal_async, get_pending_result
 
 app = Flask(__name__)
 
@@ -105,21 +104,17 @@ def chat():
                 metadata_out=metadata,
             ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
-            yield "data: [DONE]\n\n"
-
-            # Trigger self-heal if confidence is low
+            # Invoke self-heal BEFORE [DONE] — all tokens are already streamed,
+            # but Lambda can freeze the container after [DONE] so we must fire first.
             top_score = metadata.get("top_score", 1.0)
             if self_heal_enabled and top_score < confidence_threshold:
                 app.logger.info(
                     f"[self_heal:{bot_id}] low confidence ({top_score:.3f} < {confidence_threshold}) "
-                    f"— spawning background self-heal"
+                    f"— spawning self-heal"
                 )
-                thread = threading.Thread(
-                    target=run_self_heal,
-                    args=(bot_id, message, config),
-                    daemon=True,
-                )
-                thread.start()
+                invoke_self_heal_async(bot_id, message, config)
+
+            yield "data: [DONE]\n\n"
 
         except Exception as e:
             yield f'data: {json.dumps({"error": str(e)})}\n\n'

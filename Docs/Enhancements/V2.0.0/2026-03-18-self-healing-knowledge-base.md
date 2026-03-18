@@ -24,7 +24,7 @@ User asks question
         |
         v
   ┌──────────────────────────────────────────────────┐
-  │  BACKGROUND THREAD (non-blocking)                │
+  │  ASYNC LAMBDA (non-blocking)                     │
   │                                                  │
   │  1. Short message filter                         │
   │     Skip if < 10 chars (greetings, "hi", etc.)   │
@@ -119,8 +119,11 @@ Four layers prevent redundant content:
 | SES notifier | `factory/core/ses_notifier.py` | Email via SES (logs in local dev) |
 | Single-entry embedding | `factory/core/generate_embeddings.py` | `embed_and_store_single()` — additive, no kill-and-fill |
 | Cache invalidation | `factory/core/retrieval.py` | `invalidate_bot_cache()` |
-| Dev server trigger | `dev_server.py` | Background thread + piggyback |
-| Prod Lambda trigger | `factory/streaming_handler.py` | Same pattern for production |
+| Self-heal Lambda | `factory/core/self_heal.py` | `lambda_handler()` — dedicated async Lambda in production |
+| Async invoker | `factory/core/self_heal.py` | `invoke_self_heal_async()` — threads locally, async Lambda in prod |
+| Dev server trigger | `dev_server.py` | Invokes self-heal before `[DONE]` via `invoke_self_heal_async()` |
+| Prod streaming trigger | `dev_server.py` (via Lambda Web Adapter) | Same code path — Flask runs in Lambda |
+| Terraform | `terraform/lambdas.tf` | `bot-factory-self-heal` Lambda (300s timeout, 512MB) |
 
 ## What This Solves
 
@@ -136,7 +139,34 @@ Four layers prevent redundant content:
 3. Background: LLM generates YML → validates → embeds → stores (seconds)
 4. Same session or next user: full answer from knowledge base
 
-## Future (Phase 2)
+## Production Architecture
+
+In production, self-heal runs as a **separate Lambda** (`bot-factory-self-heal`) invoked
+asynchronously (`InvocationType=Event`) by the streaming Lambda. This solves a critical
+issue: Lambda freezes/kills the container after the response stream closes, which killed
+background threads before they could complete.
+
+```
+Streaming Lambda (bot-factory-stream)
+  → Flask via Lambda Web Adapter
+    → Stream tokens to user
+    → invoke_self_heal_async() fires before [DONE]
+      → boto3 lambda.invoke(InvocationType="Event") — returns 202 immediately
+    → yield [DONE], close stream
+
+Self-Heal Lambda (bot-factory-self-heal)  ← async, fire-and-forget
+  → lambda_handler() receives {bot_id, question, config}
+  → run_self_heal() — full pipeline (boundary → generate → validate → embed)
+  → 300s timeout, 512MB — plenty of room for LLM calls
+```
+
+**Locally**, `invoke_self_heal_async()` falls back to a daemon thread since there's no
+Lambda container lifecycle to worry about.
+
+The boto3 Lambda client is cached at module level (`_get_lambda_client()`) to avoid
+cold-start overhead on every invoke — keeps the delay before `[DONE]` under 500ms.
+
+## Future (v2.1+)
 
 - Real-time SSE push notification (keep connection open with timeout)
 - Web search integration for factual content augmentation

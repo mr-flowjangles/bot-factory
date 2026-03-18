@@ -194,6 +194,20 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = "arn:aws:lambda:*:*:function:bot-factory-self-heal"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -231,4 +245,9 @@ output "stream_function_name" {
 output "embed_function_name" {
   value       = aws_lambda_function.embedding.function_name
   description = "Embed Lambda function name"
+}
+
+output "self_heal_function_name" {
+  value       = aws_lambda_function.self_heal.function_name
+  description = "Self-heal Lambda function name"
 }

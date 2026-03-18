@@ -44,7 +44,7 @@ def send_self_heal_email(bot_id: str, question: str, generated_content: str, to_
     try:
         ses = _get_ses_client()
         ses.send_email(
-            Source=os.getenv("SES_FROM_EMAIL", f"botfactory@{os.getenv('SES_DOMAIN', 'example.com')}"),
+            Source=os.getenv("SES_FROM_EMAIL", "robmrose@me.com"),
             Destination={"ToAddresses": [to_email]},
             Message={
                 "Subject": {"Data": subject},

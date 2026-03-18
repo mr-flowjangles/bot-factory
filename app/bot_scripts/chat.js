@@ -112,10 +112,22 @@ async function sendMessage() {
     chatSuggestions.style.display = "none";
   }
 
-  const typing = showTyping();
+  // Show bot label + typing dots together from the start
+  const div = document.createElement("div");
+  div.className = "chat-message bot";
+  const label = document.createElement("div");
+  label.className = "bot-label";
+  label.textContent = config.botName;
+  div.appendChild(label);
+  const typing = document.createElement("div");
+  typing.className = "typing-indicator";
+  typing.innerHTML = "<span></span><span></span><span></span>";
+  div.appendChild(typing);
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 
   try {
-    const response = await fetch(config.apiUrl + "/chat/stream", {
+    const response = await fetch(config.apiUrl + "/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -130,19 +142,10 @@ async function sendMessage() {
 
     if (!response.ok) {
       typing.remove();
-      addMessage("Sorry, something went wrong. Try again in a moment.", "bot");
+      const formatter = config.formatMessage || defaultFormatMessage;
+      formatter("Sorry, something went wrong. Try again in a moment.", div);
       return;
     }
-
-    typing.remove();
-
-    const div = document.createElement("div");
-    div.className = "chat-message bot";
-    const label = document.createElement("div");
-    label.className = "bot-label";
-    label.textContent = config.botName;
-    div.appendChild(label);
-    chatMessages.appendChild(div);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -150,6 +153,7 @@ async function sendMessage() {
     let fullResponse = "";
     const tokenQueue = [];
     let rendering = false;
+    let typingRemoved = false;
 
     // Drip-render tokens at a smooth pace
     function renderNext() {
@@ -158,6 +162,13 @@ async function sendMessage() {
         return;
       }
       rendering = true;
+
+      // Remove typing dots on first token — seamless transition
+      if (!typingRemoved) {
+        typing.remove();
+        typingRemoved = true;
+      }
+
       fullResponse += tokenQueue.shift();
 
       while (div.childNodes.length > 1) {
@@ -210,8 +221,9 @@ async function sendMessage() {
       conversationHistory.splice(0, conversationHistory.length - maxMessages);
     }
   } catch (error) {
-    typing.remove();
-    addMessage("Sorry, I couldn't connect. Try again in a moment.", "bot");
+    if (!typingRemoved) typing.remove();
+    const formatter = config.formatMessage || defaultFormatMessage;
+    formatter("Sorry, I couldn't connect. Try again in a moment.", div);
   }
 }
 
