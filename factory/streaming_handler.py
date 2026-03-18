@@ -82,10 +82,9 @@ def handler(event, *args):
         return
 
     try:
-        import threading
         from factory.core.chatbot import generate_response_stream
         from factory.core.bot_utils import load_bot_config
-        from factory.core.self_heal import run_self_heal, get_pending_result
+        from factory.core.self_heal import invoke_self_heal_async, get_pending_result
 
         config = load_bot_config(bot_id)
         rag = config.get("bot", {}).get("rag", {})
@@ -126,14 +125,9 @@ def handler(event, *args):
         if self_heal_enabled and top_score < confidence_threshold:
             logger.info(
                 f"[self_heal:{bot_id}] low confidence ({top_score:.3f} < {confidence_threshold}) "
-                f"— spawning background self-heal"
+                f"— invoking self-heal"
             )
-            thread = threading.Thread(
-                target=run_self_heal,
-                args=(bot_id, message, config),
-                daemon=True,
-            )
-            thread.start()
+            invoke_self_heal_async(bot_id, message, config)
 
     except Exception as e:
         logger.error(f"[stream:{bot_id}] error: {e}", exc_info=True)

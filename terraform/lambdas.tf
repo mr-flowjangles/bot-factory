@@ -80,6 +80,7 @@ resource "aws_lambda_function" "streaming" {
       API_KEYS_TABLE_NAME     = aws_dynamodb_table.api_keys.name
       RAG_BOT_ID_INDEX_NAME   = "bot_id-index"
       APP_ENV                 = "production"
+      SELF_HEAL_FUNCTION_NAME = aws_lambda_function.self_heal.function_name
       AWS_LWA_INVOKE_MODE     = "response_stream"
       AWS_LWA_PORT            = "8080"
       AWS_LAMBDA_EXEC_WRAPPER = "/opt/bootstrap"
@@ -125,6 +126,35 @@ resource "aws_lambda_function" "embedding" {
       RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
       DATA_SOURCE            = "s3"
       APP_ENV                = "production"
+    }
+  }
+
+  tags = { Project = "bot-factory" }
+}
+
+# ─────────────────────────────────────────────────────────────
+# Self-Heal Lambda — async background agent
+# Invoked fire-and-forget by the streaming Lambda when
+# RAG confidence is low.
+# ─────────────────────────────────────────────────────────────
+
+resource "aws_lambda_function" "self_heal" {
+  function_name = "bot-factory-self-heal"
+  role          = aws_iam_role.lambda_exec.arn
+  handler       = "factory.core.self_heal.lambda_handler"
+  runtime       = "python3.12"
+  timeout       = 300
+  memory_size   = 512
+
+  filename         = local.lambda_zip
+  source_code_hash = local.lambda_hash
+
+  environment {
+    variables = {
+      BOT_DATA_BUCKET       = aws_s3_bucket.bot_factory.id
+      RAG_TABLE_NAME        = aws_dynamodb_table.rag.name
+      RAG_BOT_ID_INDEX_NAME = "bot_id-index"
+      APP_ENV               = "production"
     }
   }
 

@@ -11,9 +11,10 @@ When a bot can't answer a question (low RAG confidence), this module:
 7. Invalidates the in-memory embedding cache
 8. Sends a notification email via SES
 
-Runs as a background thread — does not block the user's response.
+Runs as a background thread locally, or as a separate Lambda in production.
 """
 
+import json
 import os
 import re
 import time
@@ -330,3 +331,59 @@ def run_self_heal(bot_id: str, question: str, config: dict, on_complete_callback
 
     if on_complete_callback:
         on_complete_callback(heal_result)
+
+
+# ---------------------------------------------------------------------------
+# Lambda entry point (production)
+# ---------------------------------------------------------------------------
+
+
+def lambda_handler(event, context):
+    """AWS Lambda handler for async self-heal invocation.
+
+    Expected event payload:
+        {"bot_id": "...", "question": "...", "config": {...}}
+    """
+    bot_id = event.get("bot_id")
+    question = event.get("question")
+    config = event.get("config")
+
+    if not bot_id or not question or not config:
+        print(f"  [self_heal] lambda_handler missing required fields: {list(event.keys())}")
+        return {"status": "error", "message": "missing bot_id, question, or config"}
+
+    print(f"  [self_heal] lambda_handler invoked for {bot_id}: {question[:80]}")
+    run_self_heal(bot_id, question, config)
+    return {"status": "ok", "bot_id": bot_id}
+
+
+def invoke_self_heal_async(bot_id: str, question: str, config: dict):
+    """Invoke the self-heal Lambda asynchronously (fire-and-forget).
+
+    In local dev, falls back to a background thread.
+    """
+    if os.getenv("APP_ENV", "local") != "production":
+        # Local dev — use background thread
+        import threading
+        thread = threading.Thread(
+            target=run_self_heal,
+            args=(bot_id, question, config),
+            daemon=True,
+        )
+        thread.start()
+        return
+
+    # Production — invoke Lambda async
+    function_name = os.getenv("SELF_HEAL_FUNCTION_NAME", "bot-factory-self-heal")
+    payload = json.dumps({"bot_id": bot_id, "question": question, "config": config})
+
+    try:
+        client = boto3.client("lambda", region_name=os.getenv("AWS_REGION", "us-east-1"))
+        client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",  # async, fire-and-forget
+            Payload=payload.encode("utf-8"),
+        )
+        print(f"  [self_heal:{bot_id}] async Lambda invoked: {function_name}")
+    except Exception as e:
+        print(f"  [self_heal:{bot_id}] failed to invoke Lambda: {e}")
