@@ -54,6 +54,7 @@ def handler(event, *args):
 
     bot_id = body.get("bot_id")
     message = body.get("message")
+    conversation_history = body.get("conversation_history", [])
 
     if not is_streaming:
         if not bot_id or not message:
@@ -81,27 +82,58 @@ def handler(event, *args):
         return
 
     try:
+        import threading
         from factory.core.chatbot import generate_response_stream
         from factory.core.bot_utils import load_bot_config
+        from factory.core.self_heal import run_self_heal, get_pending_result
 
         config = load_bot_config(bot_id)
         rag = config.get("bot", {}).get("rag", {})
         top_k = rag.get("top_k", 5)
         similarity_threshold = rag.get("similarity_threshold", 0.3)
 
+        # Self-heal config
+        agentic = config.get("bot", {}).get("agentic", {})
+        self_heal_enabled = agentic.get("self_heal", False)
+        confidence_threshold = agentic.get("confidence_threshold", 0.5)
+
         logger.info(f"[stream:{bot_id}] query='{message[:60]}' top_k={top_k}")
 
+        # Piggyback: notify about previously auto-learned content
+        pending = get_pending_result(bot_id)
+        if pending:
+            topic = pending.get("topic", "a new topic")
+            heal_msg = f"I just learned about {topic}! Try asking me again."
+            msg = f"data: {json.dumps({'type': 'self_heal', 'message': heal_msg})}\n\n"
+            response_stream.write(msg.encode("utf-8"))
+
+        metadata = {}
         for token in generate_response_stream(
             bot_id=bot_id,
             user_message=message,
             top_k=top_k,
             similarity_threshold=similarity_threshold,
-            conversation_history=[],
+            conversation_history=conversation_history,
+            metadata_out=metadata,
         ):
             chunk = f"data: {json.dumps({'token': token})}\n\n"
             response_stream.write(chunk.encode("utf-8"))
 
         response_stream.write(b"data: [DONE]\n\n")
+
+        # Trigger self-heal if confidence is low
+        top_score = metadata.get("top_score", 1.0)
+        if self_heal_enabled and top_score < confidence_threshold:
+            logger.info(
+                f"[self_heal:{bot_id}] low confidence ({top_score:.3f} < {confidence_threshold}) "
+                f"— spawning background self-heal"
+            )
+            thread = threading.Thread(
+                target=run_self_heal,
+                args=(bot_id, message, config),
+                daemon=True,
+            )
+            thread.start()
 
     except Exception as e:
         logger.error(f"[stream:{bot_id}] error: {e}", exc_info=True)

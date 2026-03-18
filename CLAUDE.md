@@ -89,3 +89,17 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 - **Kill-and-fill embeddings:** Regeneration deletes only the target bot's embeddings, leaving others untouched
 - **Environment abstraction:** `APP_ENV` env var switches between LocalStack endpoints (local) and real AWS (production)
 - **Multi-bot single deployment:** All bots share the same Lambda/infra; bot_id scopes everything (S3 paths, DynamoDB queries, caches)
+- **Context-aware RAG retrieval:** Follow-up queries are enriched with the last exchange (user + assistant) so vague references like "around there" resolve correctly via `_build_enriched_query()` in `chatbot.py`
+- **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
+
+## Enhancements
+
+Enhancement docs live in `Docs/Enhancements/{version}/` (date-prefixed):
+- **V2.0.0 — Self-Healing Knowledge Base** (`V2.0.0/2026-03-18-self-healing-knowledge-base.md`) — When a bot can't answer a question (low RAG confidence), a background thread generates a YML data file via LLM, validates it, embeds it, and backfills the knowledge base. Config-driven (`bot.agentic.self_heal`). Phase 1 shipped.
+
+## Production Deployment Notes
+
+- The streaming Lambda runs Flask `dev_server.py` via Lambda Web Adapter (not `streaming_handler.py` directly)
+- Deploy Lambda code: `make deploy-streaming` (may need `-auto-approve` for non-interactive terraform)
+- After deploying bot data + re-embedding, force a Lambda cold start to clear the in-memory embedding cache
+- To force a cold start: `aws lambda update-function-configuration --function-name bot-factory-stream --region us-east-1 --description "cache-bust-$(date +%s)"`

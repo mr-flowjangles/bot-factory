@@ -1,0 +1,70 @@
+2.0.0
+
+# =============================================================================
+# Bot Factory — Release Notes
+# =============================================================================
+
+## v2.0.0 — Self-Healing Knowledge Base (2026-03-18)
+
+The bot goes from static to self-improving. When a bot can't answer a question,
+it now detects the gap and autonomously generates new knowledge — no manual
+data entry required.
+
+### New
+- Self-healing knowledge base pipeline (factory/core/self_heal.py)
+  - Boundary + coherence check via LLM (rejects off-topic, gibberish, incomplete)
+  - Duplicate detection via embedding similarity
+  - LLM-generated YML data files matching existing knowledge base format
+  - Content validation via second LLM call
+  - Additive embedding — single-entry writes to DynamoDB (no kill-and-fill)
+  - In-memory cache invalidation so next request picks up new content
+  - SES email notification on auto-generated content (logs in local dev)
+  - Piggyback notification — next /chat request tells the user "I just learned about X!"
+- Bot config: `bot.agentic` block (self_heal, boundary_check, confidence_threshold, notify_email)
+- `embed_and_store_single()` in generate_embeddings.py for additive writes
+- `invalidate_bot_cache()` in retrieval.py for cache management
+- `metadata_out` parameter on `generate_response_stream()` exposing RAG confidence scores
+
+### Changed
+- dev_server.py — spawns background self-heal thread on low-confidence responses
+- streaming_handler.py — same self-heal trigger for production Lambda
+- Docs/FutureDesign/ renamed to Docs/Enhancements/ (date-prefixed docs)
+
+---
+
+## v1.0.0 — Bot Factory Platform (2025–2026)
+
+The foundation. A serverless RAG chatbot platform on AWS — deploy a bot by
+providing a config + knowledge data files.
+
+### Core Platform
+- Multi-bot architecture — single Lambda deployment, bot_id scopes everything
+- RAG pipeline: Titan V2 embeddings → cosine similarity → Claude response generation
+- Two response modes: buffered (API Gateway) and streaming (Lambda Function URL + SSE)
+- Local dev stack: LocalStack (S3 + DynamoDB) + Flask dev server + nginx
+- Per-bot in-memory caching (embeddings, configs, prompts) for Lambda warm starts
+
+### Bot Management
+- YAML-based bot configuration (config.yml + prompt.yml + data/*.yml)
+- Universal chunker supporting text and structured data formats
+- Kill-and-fill embedding generation scoped per bot
+- `make scaffold` to create new bot skeletons
+- S3-based data storage with LocalStack parity
+
+### Retrieval & Response
+- Context-enriched follow-up queries (_build_enriched_query)
+- Conversation history support for multi-turn awareness
+- Configurable RAG parameters (top_k, similarity_threshold)
+- Bot boundaries for domain-scoped responses
+
+### Infrastructure
+- Terraform-managed AWS infrastructure
+- Lambda packaging and deployment (make deploy-streaming, make deploy-infra)
+- API key authentication via DynamoDB (BotFactoryApiKeys)
+- Chat interaction logging (BotFactoryLogs)
+- SSE chat client for testing and demo
+
+### Developer Experience
+- Makefile-driven workflow (up, down, local, lint, format, load-bot, embed, etc.)
+- flake8 + black code quality (line-length=120)
+- Production deployment pipeline (deploy-bot-prod, deploy-streaming)

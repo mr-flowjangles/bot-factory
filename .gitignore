@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+
+# Test results
+scripts/test_results.yml
 .Python
 *.egg-info/
 dist/

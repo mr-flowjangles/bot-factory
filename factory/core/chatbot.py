@@ -114,6 +114,44 @@ If you can't answer from the context, say so politely."""
     return messages
 
 
+def _build_enriched_query(user_message: str, conversation_history: list[dict]) -> str:
+    """Build a context-enriched query for better RAG retrieval on follow-ups.
+
+    Uses the last exchange (user + assistant) to ground vague follow-ups like
+    'what other chords are around there?' in the specific topic being discussed.
+    Assistant text is truncated before tab diagrams to keep the embedding focused.
+    """
+    if not conversation_history:
+        return user_message
+
+    # Get the last user message and last assistant message
+    last_user = None
+    last_assistant = None
+    for msg in reversed(conversation_history):
+        if msg["role"] == "assistant" and last_assistant is None:
+            # Truncate at tab diagrams (lines with e|, B|, etc.) to remove noise
+            text = msg["content"]
+            for marker in ["\ne|", "\nB|", "\ne |", "\nB |"]:
+                idx = text.find(marker)
+                if idx > 0:
+                    text = text[:idx]
+                    break
+            last_assistant = text[:200].strip()
+        elif msg["role"] == "user" and last_user is None:
+            last_user = msg["content"][:150].strip()
+        if last_user and last_assistant:
+            break
+
+    parts = []
+    if last_user:
+        parts.append(last_user)
+    if last_assistant:
+        parts.append(last_assistant)
+    parts.append(user_message)
+
+    return " | ".join(parts)
+
+
 def generate_response(
     bot_id: str,
     user_message: str,
@@ -126,9 +164,10 @@ def generate_response(
 
     t0 = time.time()
 
+    enriched_query = _build_enriched_query(user_message, conversation_history)
     relevant_chunks = retrieve_relevant_chunks(
         bot_id=bot_id,
-        query=user_message,
+        query=enriched_query,
         top_k=top_k,
         similarity_threshold=similarity_threshold,
     )
@@ -164,19 +203,36 @@ def generate_response_stream(
     top_k: int,
     similarity_threshold: float,
     conversation_history: list[dict] = None,
+    metadata_out: dict = None,
 ):
-    """Same as generate_response, but yields text chunks for streaming."""
+    """Same as generate_response, but yields text chunks for streaming.
+
+    Args:
+        metadata_out: If provided, populated with retrieval metadata including
+            'top_score' (highest similarity from RAG) for self-heal decisions.
+    """
     logger.info(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'")
 
     if conversation_history is None:
         conversation_history = []
+    if metadata_out is None:
+        metadata_out = {}
 
+    logger.info(f"[chatbot:{bot_id}] conversation_history={len(conversation_history)} messages")
+    enriched_query = _build_enriched_query(user_message, conversation_history)
+    logger.info(f"[chatbot:{bot_id}] enriched_query='{enriched_query[:120]}'")
     relevant_chunks = retrieve_relevant_chunks(
         bot_id=bot_id,
-        query=user_message,
+        query=enriched_query,
         top_k=top_k,
         similarity_threshold=similarity_threshold,
     )
+
+    # Expose top similarity score for self-heal confidence check
+    top_score = relevant_chunks[0]["similarity"] if relevant_chunks else 0.0
+    metadata_out["top_score"] = top_score
+    metadata_out["chunk_count"] = len(relevant_chunks)
+    logger.info(f"[chatbot:{bot_id}] top_score={top_score:.3f} chunks={len(relevant_chunks)}")
 
     context = format_context_for_llm(relevant_chunks)
     messages = build_messages(user_message, context, conversation_history)
