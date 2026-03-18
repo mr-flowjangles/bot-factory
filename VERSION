@@ -1,8 +1,33 @@
-2.0.0
+2.0.1
 
 # =============================================================================
 # Bot Factory — Release Notes
 # =============================================================================
+
+## v2.0.1 — Production Self-Heal + Chat UX (2026-03-18)
+
+Fixes self-heal in production and polishes the chat experience.
+
+### Fixed
+- Self-heal now runs as a dedicated async Lambda (`bot-factory-self-heal`) instead of
+  background threads — Lambda was killing threads after the response stream closed
+- Self-heal invocation moved before `[DONE]` marker — Lambda can freeze the container
+  after stream close, so the invoke must happen while the generator is still executing
+- Cached boto3 Lambda client eliminates cold-start overhead on every self-heal invoke
+- SES sender address updated to verified email
+- Chat client endpoint fixed: `/chat/stream` → `/chat`
+
+### Improved
+- Chat UX: bot label and typing dots appear together as one unit, then smoothly
+  transition to streaming answer (no visual gap/flash between states)
+
+### Infrastructure
+- New Lambda: `bot-factory-self-heal` (handler: `factory.core.self_heal.lambda_handler`,
+  300s timeout, 512MB)
+- IAM: `lambda:InvokeFunction` for self-heal Lambda + `ses:SendEmail`
+- Streaming Lambda gets `SELF_HEAL_FUNCTION_NAME` env var
+
+---
 
 ## v2.0.0 — Self-Healing Knowledge Base (2026-03-18)
 
