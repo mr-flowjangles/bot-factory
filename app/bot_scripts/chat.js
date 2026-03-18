@@ -147,14 +147,13 @@ async function sendMessage() {
       return;
     }
 
-    typing.remove();
-
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let sseBuffer = "";
     let fullResponse = "";
     const tokenQueue = [];
     let rendering = false;
+    let typingRemoved = false;
 
     // Drip-render tokens at a smooth pace
     function renderNext() {
@@ -163,6 +162,13 @@ async function sendMessage() {
         return;
       }
       rendering = true;
+
+      // Remove typing dots on first token — seamless transition
+      if (!typingRemoved) {
+        typing.remove();
+        typingRemoved = true;
+      }
+
       fullResponse += tokenQueue.shift();
 
       while (div.childNodes.length > 1) {
@@ -215,7 +221,7 @@ async function sendMessage() {
       conversationHistory.splice(0, conversationHistory.length - maxMessages);
     }
   } catch (error) {
-    typing.remove();
+    if (!typingRemoved) typing.remove();
     const formatter = config.formatMessage || defaultFormatMessage;
     formatter("Sorry, I couldn't connect. Try again in a moment.", div);
   }
