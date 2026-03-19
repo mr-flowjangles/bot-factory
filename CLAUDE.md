@@ -81,11 +81,12 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 
 - Python 3.12
 - Line length: 120 (both flake8 and black)
-- No automated test suite — testing is manual via `make test-chat` or browser
+- `make test` — pytest suite (requires LocalStack running); tests retrieval + self-heal integration
+- `make test-chat` — manual end-to-end testing via browser or CLI
 
 ## Key Design Patterns
 
-- **Per-bot in-memory caching:** Embeddings, configs, and prompts cached per bot_id in Lambda warm starts
+- **No embedding cache:** Embeddings are read fresh from DynamoDB on every request so self-healed content is immediately available
 - **Kill-and-fill embeddings:** Regeneration deletes only the target bot's embeddings, leaving others untouched
 - **Environment abstraction:** `APP_ENV` env var switches between LocalStack endpoints (local) and real AWS (production)
 - **Multi-bot single deployment:** All bots share the same Lambda/infra; bot_id scopes everything (S3 paths, DynamoDB queries, caches)
@@ -102,5 +103,4 @@ Enhancement docs live in `Docs/Enhancements/{version}/` (date-prefixed):
 
 - The streaming Lambda runs Flask `dev_server.py` via Lambda Web Adapter (not `streaming_handler.py` directly)
 - Deploy Lambda code: `make deploy-streaming` (may need `-auto-approve` for non-interactive terraform)
-- After deploying bot data + re-embedding, force a Lambda cold start to clear the in-memory embedding cache
-- To force a cold start: `aws lambda update-function-configuration --function-name bot-factory-stream --region us-east-1 --description "cache-bust-$(date +%s)"`
+- Embeddings are read fresh from DynamoDB each request — no cache to bust after re-embedding

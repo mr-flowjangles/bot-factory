@@ -96,15 +96,12 @@ query_embedding = generate_query_embedding(query)
 
 **Step B — Load bot embeddings:**
 ```python
-items = get_cached_embeddings(bot_id)
+items = get_embeddings(bot_id)
 ```
-- Checks `_embeddings_cache[bot_id]` (dict keyed by bot_id, warm Lambda cache)
-- On cache **HIT**: returns immediately, no DynamoDB call
-- On cache **MISS**:
-  - Queries `BotFactoryRAG` DynamoDB table using the `bot_id-index` GSI
-  - Only fetches rows for this bot — no full-table scan
-  - Paginates until all items are loaded
-  - Stores in `_embeddings_cache[bot_id]`
+- Queries `BotFactoryRAG` DynamoDB table using the `bot_id-index` GSI
+- Only fetches rows for this bot — no full-table scan
+- Paginates until all items are loaded
+- No in-memory cache — always reads fresh from DynamoDB so self-healed content is immediately available
 
 **Step C — Cosine similarity search (in memory):**
 - Converts each stored embedding from `Decimal` to `float`

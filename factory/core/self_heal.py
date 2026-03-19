@@ -25,9 +25,8 @@ import boto3
 from .self_heal_prompts import BOUNDARY_CHECK_PROMPT, YML_GENERATION_PROMPT, VALIDATION_PROMPT
 from .retrieval import (
     generate_query_embedding,
-    get_cached_embeddings,
+    get_embeddings,
     cosine_similarity,
-    invalidate_bot_cache,
 )
 from .generate_embeddings import embed_and_store_single
 from .ses_notifier import send_self_heal_email
@@ -137,7 +136,7 @@ def _duplicate_check(bot_id: str, question: str, threshold: float = 0.7) -> bool
     """Check if similar content already exists. Returns True if duplicate found."""
     try:
         query_embedding = generate_query_embedding(question)
-        items = get_cached_embeddings(bot_id)
+        items = get_embeddings(bot_id)
 
         for item in items:
             stored_embedding = [float(x) for x in item["embedding"]]
@@ -319,10 +318,7 @@ def run_self_heal(bot_id: str, question: str, config: dict, on_complete_callback
     }
     embed_and_store_single(bot_id, embed_entry)
 
-    # 8. Invalidate cache so next request picks up the new embedding
-    invalidate_bot_cache(bot_id)
-
-    # 9. Send notification email
+    # 8. Send notification email
     agentic = config.get("bot", {}).get("agentic", {})
     notify_email = agentic.get("notify_email")
     if notify_email:

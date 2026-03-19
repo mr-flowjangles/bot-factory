@@ -193,6 +193,9 @@ test-chat:
 		'body': json.dumps({'bot_id': '$(BOT)', 'message': '$(or $(MSG),hi)'}) \
 	}, None); print(json.dumps(json.loads(result['body']), indent=2))"
 
+test:
+	python3 -m pytest tests/ -v
+
 test-self-heal:
 	python3 scripts/test_self_heal.py
 
