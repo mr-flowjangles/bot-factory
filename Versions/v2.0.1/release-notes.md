@@ -1,6 +1,6 @@
-# V2.0.1 — Production Self-Heal + Chat UX
+# v2.0.1 — Production Self-Heal + Chat UX (2026-03-18)
 
-> **Shipped** — 2026-03-18
+Fixes self-heal in production and polishes the chat experience.
 
 ## Problem
 
@@ -50,6 +50,21 @@ Bot label and typing indicator now render as a single unit from the start. When 
 arrive, the typing dots are removed and tokens stream into the same div. One smooth
 transition instead of three visual jumps.
 
+## Fixed
+- Self-heal now runs as a dedicated async Lambda instead of background threads
+- Self-heal invocation moved before `[DONE]` marker
+- Cached boto3 Lambda client eliminates cold-start overhead
+- SES sender address updated to verified email
+- Chat client endpoint fixed: `/chat/stream` → `/chat`
+
+## Improved
+- Chat UX: bot label and typing dots appear together as one unit
+
+## Infrastructure
+- New Lambda: `bot-factory-self-heal` (300s timeout, 512MB)
+- IAM: `lambda:InvokeFunction` for self-heal Lambda + `ses:SendEmail`
+- Streaming Lambda gets `SELF_HEAL_FUNCTION_NAME` env var
+
 ## Files Changed
 
 | File | Change |
@@ -63,8 +78,6 @@ transition instead of three visual jumps.
 | `app/bot_scripts/chat.js` | Bot label + typing dots appear together; `/chat/stream` → `/chat` |
 
 ## Verification
-
-Tested in production with multiple question types:
 
 | Question | Boundary | Duplicate | Result |
 |----------|----------|-----------|--------|

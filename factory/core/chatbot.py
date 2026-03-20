@@ -108,7 +108,7 @@ def build_messages(user_message: str, context: str, conversation_history: list[d
 {user_message}
 
 Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. \
-If you can't answer from the context, say so politely."""
+Use the context to answer even if the wording doesn't exactly match the question. Only say you can't answer if the context has nothing relevant."""
 
     messages.append({"role": "user", "content": [{"text": user_content}]})
     return messages

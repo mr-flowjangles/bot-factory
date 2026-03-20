@@ -1,6 +1,7 @@
-# V2.0.2 — Embedding Context + Search Term Enrichment
+# v2.0.2 — Embedding Context + Search Term Enrichment (2026-03-19)
 
-> **Shipped** — 2026-03-19
+Domain-specific retrieval accuracy overhaul. The bot went from ~85% to 99.3% pass
+rate on 294 coverage queries.
 
 ## Problem
 
@@ -53,6 +54,20 @@ colloquial phrasings (e.g., "best pick for beginner" matching `gear_picks`).
 
 Deleted 119 duplicate self-heal files from prod S3, kept 16 with genuinely new content.
 Re-embedded prod from 260 down to 164 chunks.
+
+## New
+- Config-driven `embedding_context` field (`bot.rag.embedding_context`)
+- Coverage test script (`scripts/test_knowledge_coverage.py`) with 294 queries
+- `make test-coverage` and `make test-coverage-local` targets
+
+## Fixed
+- Removed embedding cache — fresh from DynamoDB every request
+- Removed config cache — config changes take effect immediately
+- Self-heal duplicate check threshold synced to bot's `confidence_threshold` (was hardcoded at 0.7)
+- Cleaned up 119 duplicate self-heal files from prod S3
+
+## Improved
+- Search terms enriched on 30+ entries across 13 data files
 
 ## Results
 
