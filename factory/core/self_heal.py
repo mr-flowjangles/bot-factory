@@ -25,9 +25,8 @@ import boto3
 from .self_heal_prompts import BOUNDARY_CHECK_PROMPT, YML_GENERATION_PROMPT, VALIDATION_PROMPT
 from .retrieval import (
     generate_query_embedding,
-    get_cached_embeddings,
+    get_embeddings,
     cosine_similarity,
-    invalidate_bot_cache,
 )
 from .generate_embeddings import embed_and_store_single
 from .ses_notifier import send_self_heal_email
@@ -133,11 +132,15 @@ def _boundary_check(question: str, config: dict) -> bool:
     return in_bounds
 
 
-def _duplicate_check(bot_id: str, question: str, threshold: float = 0.7) -> bool:
-    """Check if similar content already exists. Returns True if duplicate found."""
+def _duplicate_check(bot_id: str, question: str, threshold: float = 0.6) -> bool:
+    """Check if similar content already exists. Returns True if duplicate found.
+
+    Uses the same threshold as the bot's confidence_threshold (passed via config).
+    Callers can override with the bot's actual value from config.
+    """
     try:
         query_embedding = generate_query_embedding(question)
-        items = get_cached_embeddings(bot_id)
+        items = get_embeddings(bot_id)
 
         for item in items:
             stored_embedding = [float(x) for x in item["embedding"]]
@@ -273,9 +276,12 @@ def run_self_heal(bot_id: str, question: str, config: dict, on_complete_callback
         print(f"  [self_heal:{bot_id}] question out of bounds, skipping")
         return
 
-    # 2. Duplicate check
-    if _duplicate_check(bot_id, question):
-        print(f"  [self_heal:{bot_id}] similar content exists, skipping")
+    # 2. Duplicate check — use the bot's confidence threshold so it stays in sync
+    #    with the self-heal trigger decision
+    agentic = config.get("bot", {}).get("agentic", {})
+    dup_threshold = agentic.get("confidence_threshold", 0.6)
+    if _duplicate_check(bot_id, question, threshold=dup_threshold):
+        print(f"  [self_heal:{bot_id}] similar content exists (threshold={dup_threshold}), skipping")
         return
 
     # 3. Check if S3 file already exists
@@ -319,10 +325,7 @@ def run_self_heal(bot_id: str, question: str, config: dict, on_complete_callback
     }
     embed_and_store_single(bot_id, embed_entry)
 
-    # 8. Invalidate cache so next request picks up the new embedding
-    invalidate_bot_cache(bot_id)
-
-    # 9. Send notification email
+    # 8. Send notification email
     agentic = config.get("bot", {}).get("agentic", {})
     notify_email = agentic.get("notify_email")
     if notify_email:

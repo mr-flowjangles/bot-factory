@@ -2,11 +2,8 @@
 Retrieval Module (Parameterized)
 
 Performs semantic search against stored embeddings in DynamoDB,
-scoped by bot_id. Each bot's embeddings are cached separately
-in memory for warm Lambda reuse.
-
-Uses a GSI on bot_id to query only that bot's items instead of
-scanning the entire table.
+scoped by bot_id. Queries the GSI on bot_id each request so
+self-healed content is immediately available.
 """
 
 import os
@@ -24,9 +21,6 @@ EMBEDDING_DIMENSIONS = 1024
 RAG_TABLE_NAME = os.getenv("RAG_TABLE_NAME", "BotFactoryRAG")
 GSI_NAME = os.getenv("RAG_BOT_ID_INDEX_NAME", "bot_id-index")
 
-# Per-bot embedding cache — survives across warm Lambda invocations
-_embeddings_cache = {}
-
 
 def get_dynamodb_connection():
     if os.getenv("APP_ENV", "local") == "production":
@@ -40,19 +34,14 @@ def get_dynamodb_connection():
     )
 
 
-def get_cached_embeddings(bot_id: str) -> list[dict]:
-    """Load and cache embeddings for a specific bot via GSI query."""
-    if bot_id in _embeddings_cache:
-        logger.info(f"[retrieval:{bot_id}] cache HIT — {len(_embeddings_cache[bot_id])} items")
-        return _embeddings_cache[bot_id]
-
-    logger.info(f"[retrieval:{bot_id}] cache MISS — querying GSI...")
+def get_embeddings(bot_id: str) -> list[dict]:
+    """Load embeddings for a specific bot via GSI query."""
+    logger.info(f"[retrieval:{bot_id}] querying GSI...")
     t_start = time.time()
 
     dynamodb = get_dynamodb_connection()
     table = dynamodb.Table(RAG_TABLE_NAME)
 
-    # Query the GSI — reads only this bot's items, not the whole table
     items = []
     response = table.query(
         IndexName=GSI_NAME,
@@ -72,19 +61,7 @@ def get_cached_embeddings(bot_id: str) -> list[dict]:
 
     t_query = time.time() - t_start
     logger.info(f"[retrieval:{bot_id}] GSI query — {len(items)} items, {pages} page(s), {t_query:.3f}s")
-
-    _embeddings_cache[bot_id] = items
-    logger.info(f"[retrieval:{bot_id}] cached {len(items)} embeddings")
     return items
-
-
-def invalidate_bot_cache(bot_id: str):
-    """Clear cached embeddings for a bot so the next request reloads from DynamoDB."""
-    if bot_id in _embeddings_cache:
-        del _embeddings_cache[bot_id]
-        logger.info(f"[retrieval:{bot_id}] cache INVALIDATED")
-    else:
-        logger.info(f"[retrieval:{bot_id}] cache invalidate — nothing cached")
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +103,28 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
+def _load_embedding_context(bot_id: str) -> str:
+    """Load the bot's embedding_context from config so queries get the same
+    domain preamble that was used when generating document embeddings."""
+    try:
+        from .bot_utils import load_bot_config
+        config = load_bot_config(bot_id)
+        return config.get("bot", {}).get("rag", {}).get("embedding_context", "")
+    except Exception:
+        return ""
+
+
 def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_threshold: float) -> list[dict]:
     """Retrieve the most relevant chunks for a query, scoped to a bot."""
     logger.info(f"[retrieval:{bot_id}] query='{query[:60]}'")
 
+    embedding_context = _load_embedding_context(bot_id)
+    if embedding_context:
+        query = f"{embedding_context}\n\n{query}"
+        logger.info(f"[retrieval:{bot_id}] prepended embedding_context ({len(embedding_context)} chars)")
+
     query_embedding = generate_query_embedding(query)
-    items = get_cached_embeddings(bot_id)
+    items = get_embeddings(bot_id)
 
     results = []
     for item in items:

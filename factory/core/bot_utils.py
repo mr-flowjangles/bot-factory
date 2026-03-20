@@ -14,15 +14,12 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-_config_cache: dict = {}
 LOGS_TABLE_NAME = os.getenv("LOGS_TABLE_NAME", "BotFactoryLogs")
 
 
 def load_bot_config(bot_id: str) -> dict:
-    """Load a bot's config.yml from S3, cached per bot."""
-    if bot_id in _config_cache:
-        return _config_cache[bot_id]
-
+    """Load a bot's config.yml from S3. Always reads fresh so config changes
+    (like threshold tuning) take effect without a cold start."""
     from .chatbot import get_s3_client, S3_BUCKET
 
     s3_key = f"bots/{bot_id}/config.yml"
@@ -30,10 +27,7 @@ def load_bot_config(bot_id: str) -> dict:
 
     s3 = get_s3_client()
     obj = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
-    config = yaml.safe_load(obj["Body"].read().decode("utf-8"))
-
-    _config_cache[bot_id] = config
-    return config
+    return yaml.safe_load(obj["Body"].read().decode("utf-8"))
 
 
 def log_chat_interaction(bot_id: str, question: str, response: str, sources: list[dict]):
