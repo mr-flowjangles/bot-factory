@@ -1,55 +1,50 @@
 #!/usr/bin/env python3
 """
-Knowledge Coverage Regression Test
+Knowledge Coverage Regression Test (Retrieval-Only)
 
-Sends every topic from the bot's landing page to the live API and verifies
-the bot answers confidently (not "I don't have that").  Writes a detailed
-report to _scratch/coverage_results.yml with per-question diagnostics.
+Tests retrieval scores for every topic in the bot's knowledge base.
+Calls retrieve_relevant_chunks() directly — no LLM calls, no self-heal.
+
+A question FAILs if its top retrieval score is below the bot's
+confidence_threshold (default 0.6).
 
 Usage:
-    python3 scripts/test_knowledge_coverage.py              # hit prod
-    python3 scripts/test_knowledge_coverage.py --local      # hit localhost:8001
+    python3 scripts/test_knowledge_coverage.py              # run against local DynamoDB
+    python3 scripts/test_knowledge_coverage.py --prod       # run against prod DynamoDB
     make test-coverage                                      # prod (Makefile target)
-
-Requires: THE_FRET_DETECTIVE_PROD_API_KEY (prod) or THE_FRET_DETECTIVE_API_KEY (local) in .env
+    make test-coverage-local                                # local (Makefile target)
 """
 
-import json
 import os
-import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
-
-import requests
 import yaml
+from datetime import datetime
 from dotenv import load_dotenv
 
+# Add project root to path so we can import factory modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 load_dotenv()
+
+# Set APP_ENV before importing factory modules
+if "--prod" in sys.argv:
+    os.environ["APP_ENV"] = "production"
+    # Clear LocalStack test credentials so boto3 uses real AWS
+    os.environ.pop("AWS_ACCESS_KEY_ID", None)
+    os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+
+from factory.core.retrieval import retrieve_relevant_chunks  # noqa: E402
+from factory.core.bot_utils import load_bot_config  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 BOT_ID = "the-fret-detective"
-LOCAL_URL = "http://localhost:8001"
-PROD_URL = os.getenv("LAMBDA_API_URL", "")
 
 RESULTS_DIR = "_scratch"
 RESULTS_FILE = os.path.join(RESULTS_DIR, "coverage_results.yml")
-
-# Phrases that indicate the bot couldn't answer
-FAIL_PHRASES = [
-    "i don't have that",
-    "not in my knowledge base",
-    "i don't have information",
-    "outside my knowledge",
-    "i can't help with that",
-    "i'm not sure about that",
-    "don't have specific information",
-    "i don't have that specific",
-]
 
 # ---------------------------------------------------------------------------
 # All landing page topics — grouped by category
@@ -410,69 +405,8 @@ QUESTIONS = [
     {"category": "Meta", "topic": "Capabilities", "question": "Show me everything you can teach me"},
     {"category": "Meta", "topic": "Capabilities", "question": "What kinds of guitar stuff can you help me learn?"},
     {"category": "Meta", "topic": "Capabilities", "question": "What can you teach me about guitar?"},
-    {"category": "Meta", "topic": "Capabilities", "question": "What are all the guitar topics you can help with?"}
+    {"category": "Meta", "topic": "Capabilities", "question": "What are all the guitar topics you can help with?"},
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def send_chat(base_url: str, api_key: str, question: str) -> dict:
-    """Send a chat message and collect the full SSE response + sources."""
-    resp = requests.post(
-        f"{base_url}/chat",
-        json={"bot_id": BOT_ID, "message": question, "conversation_history": []},
-        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
-        stream=True,
-        timeout=30,
-    )
-
-    tokens = []
-    sources = []
-
-    for line in resp.iter_lines(decode_unicode=True):
-        if not line or not line.startswith("data: "):
-            continue
-        data = line[6:]
-        if data == "[DONE]":
-            break
-        try:
-            parsed = json.loads(data)
-            if "token" in parsed:
-                tokens.append(parsed["token"])
-            elif parsed.get("type") == "sources":
-                sources = parsed.get("sources", [])
-        except json.JSONDecodeError:
-            pass
-
-    response_text = "".join(tokens)
-    top_score = sources[0]["similarity"] if sources else 0.0
-    top_source = sources[0] if sources else None
-
-    return {
-        "response": response_text,
-        "top_score": top_score,
-        "top_source": top_source,
-        "source_count": len(sources),
-        "sources": sources[:3],  # top 3 for diagnostics
-    }
-
-
-def is_failure(response_text: str) -> bool:
-    """Check if the response indicates the bot couldn't answer."""
-    lower = response_text.lower()
-    return any(phrase in lower for phrase in FAIL_PHRASES)
-
-
-def matched_fail_phrase(response_text: str) -> str:
-    """Return the specific fail phrase that matched, if any."""
-    lower = response_text.lower()
-    for phrase in FAIL_PHRASES:
-        if phrase in lower:
-            return phrase
-    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -481,173 +415,136 @@ def matched_fail_phrase(response_text: str) -> str:
 
 
 def main():
-    is_local = "--local" in sys.argv
+    is_prod = "--prod" in sys.argv
+    env_label = "PROD" if is_prod else "LOCAL"
 
-    if is_local:
-        base_url = LOCAL_URL
-        api_key = os.getenv("THE_FRET_DETECTIVE_API_KEY", os.getenv("BOT_API_KEY", ""))
-    else:
-        base_url = PROD_URL
-        api_key = os.getenv("THE_FRET_DETECTIVE_PROD_API_KEY", "")
-
-    if not api_key:
-        key_name = "THE_FRET_DETECTIVE_API_KEY" if is_local else "THE_FRET_DETECTIVE_PROD_API_KEY"
-        print(f"ERROR: Set {key_name} in .env")
-        sys.exit(1)
-
-    if not base_url:
-        print("ERROR: Set LAMBDA_API_URL in .env (or use --local)")
-        sys.exit(1)
-
-    env_label = "LOCAL" if is_local else "PROD"
+    # Load bot config for thresholds
+    config = load_bot_config(BOT_ID)
+    rag_config = config.get("bot", {}).get("rag", {})
+    top_k = rag_config.get("top_k", 10)
+    similarity_threshold = rag_config.get("similarity_threshold", 0.4)
+    confidence_threshold = config.get("bot", {}).get("agentic", {}).get("confidence_threshold", 0.6)
 
     print()
     print("=" * 70)
-    print(f"  Knowledge Coverage Regression Test — {env_label}")
-    print(f"  URL: {base_url}")
+    print(f"  Knowledge Coverage Regression Test — {env_label} (retrieval-only)")
     print(f"  Bot: {BOT_ID}")
     print(f"  Questions: {len(QUESTIONS)}")
+    print(f"  Similarity threshold: {similarity_threshold}")
+    print(f"  Confidence threshold: {confidence_threshold} (FAIL below this)")
     print("=" * 70)
     print()
 
-    results = [None] * len(QUESTIONS)
+    results = []
     passed = 0
     failed = 0
     errors = 0
+    topic_scores = {}
 
-    # Track scores per topic for summary
-    topic_scores = {}  # topic -> [scores]
+    current_category = ""
+    current_topic = ""
+    total = len(QUESTIONS)
+    t_start = time.time()
 
-    BATCH_SIZE = 40
-
-    def run_question(idx, q):
-        """Send a single question and return (idx, result_dict)."""
+    for idx, q in enumerate(QUESTIONS):
+        # Print category/topic headers
+        if q["category"] != current_category:
+            current_category = q["category"]
+            print(f"\n  ── {current_category} ──")
         topic = q.get("topic", "")
+        if topic != current_topic:
+            current_topic = topic
+            print(f"  [{current_topic}]")
+
+        short_q = q["question"][:52]
+
         try:
-            chat = send_chat(base_url, api_key, q["question"])
-            bot_failed = is_failure(chat["response"])
-            fail_phrase = matched_fail_phrase(chat["response"])
+            chunks = retrieve_relevant_chunks(
+                bot_id=BOT_ID,
+                query=q["question"],
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            )
+
+            top_score = chunks[0]["similarity"] if chunks else 0.0
+            is_pass = top_score >= confidence_threshold
 
             result = {
                 "category": q["category"],
                 "topic": topic,
                 "question": q["question"],
-                "passed": not bot_failed,
-                "top_score": round(chat["top_score"], 4),
-                "source_count": chat["source_count"],
-                "response_preview": chat["response"][:200],
+                "passed": is_pass,
+                "top_score": round(top_score, 4),
+                "chunk_count": len(chunks),
             }
 
-            if bot_failed:
-                result["fail_reason"] = fail_phrase
-                result["top_sources"] = chat["sources"]
-
-            if chat["top_source"]:
-                result["top_source"] = {
-                    "heading": chat["top_source"].get("heading", ""),
-                    "category": chat["top_source"].get("category", ""),
-                    "similarity": round(chat["top_source"]["similarity"], 4),
+            if chunks:
+                result["top_match"] = {
+                    "id": chunks[0]["id"],
+                    "category": chunks[0]["category"],
+                    "heading": chunks[0].get("heading", ""),
                 }
 
-            return (idx, result)
+            results.append(result)
+
+            if is_pass:
+                passed += 1
+                print(f"    [{idx + 1:3d}/{total}] {short_q:54s} PASS  score={top_score:.3f}")
+            else:
+                failed += 1
+                heading = chunks[0].get("heading", "")[:40] if chunks else "no matches"
+                print(f"    [{idx + 1:3d}/{total}] {short_q:54s} FAIL  score={top_score:.3f}  [{heading}]")
 
         except Exception as e:
-            return (idx, {
+            errors += 1
+            results.append({
                 "category": q["category"],
                 "topic": topic,
                 "question": q["question"],
                 "passed": False,
                 "error": str(e),
             })
+            print(f"    [{idx + 1:3d}/{total}] {short_q:54s} ERROR  {e}")
 
-    # Process in batches of BATCH_SIZE
-    total = len(QUESTIONS)
-    for batch_start in range(0, total, BATCH_SIZE):
-        batch_end = min(batch_start + BATCH_SIZE, total)
-        batch = QUESTIONS[batch_start:batch_end]
-        batch_label = f"{batch_start + 1}-{batch_end}"
-        print(f"\n  ━━ Batch {batch_label} of {total} ({len(batch)} parallel requests) ━━")
+        # Track per-topic scores
+        topic_key = f"{q['category']}: {topic}"
+        if topic_key not in topic_scores:
+            topic_scores[topic_key] = []
+        if "top_score" in result:
+            topic_scores[topic_key].append(result["top_score"])
 
-        with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
-            futures = {
-                executor.submit(run_question, batch_start + j, q): (batch_start + j, q)
-                for j, q in enumerate(batch)
-            }
-            for future in as_completed(futures):
-                idx, result = future.result()
-                results[idx] = result
-
-        # Print batch results in order
-        current_category = ""
-        current_topic = ""
-        for j in range(batch_start, batch_end):
-            q = QUESTIONS[j]
-            result = results[j]
-
-            if q["category"] != current_category:
-                current_category = q["category"]
-                print(f"\n  ── {current_category} ──")
-
-            topic = q.get("topic", "")
-            if topic != current_topic:
-                current_topic = topic
-                print(f"  [{current_topic}]")
-
-            short_q = q["question"][:52]
-
-            if "error" in result:
-                errors += 1
-                print(f"    [{j + 1:3d}/{total}] {short_q:54s} ERROR  {result['error']}")
-            elif not result["passed"]:
-                failed += 1
-                print(f"    [{j + 1:3d}/{total}] {short_q:54s} FAIL  score={result['top_score']:.3f}  [{result.get('fail_reason', '')}]")
-                print(f"             response: {result['response_preview'][:100]}")
-            else:
-                passed += 1
-                print(f"    [{j + 1:3d}/{total}] {short_q:54s} PASS  score={result['top_score']:.3f}")
-
-            # Track per-topic scores
-            topic_key = f"{q['category']}: {topic}"
-            if topic_key not in topic_scores:
-                topic_scores[topic_key] = []
-            if "top_score" in result:
-                topic_scores[topic_key].append(result["top_score"])
+    elapsed = time.time() - t_start
 
     # Build topic summary
     topic_summary = []
     for topic_key, scores in topic_scores.items():
-        min_score = min(scores)
-        avg_score = sum(scores) / len(scores)
-        max_score = max(scores)
         topic_summary.append({
             "topic": topic_key,
-            "min_score": round(min_score, 4),
-            "avg_score": round(avg_score, 4),
-            "max_score": round(max_score, 4),
+            "min_score": round(min(scores), 4),
+            "avg_score": round(sum(scores) / len(scores), 4),
+            "max_score": round(max(scores), 4),
             "variants": len(scores),
         })
-
-    # Sort by min score ascending (weakest topics first)
     topic_summary.sort(key=lambda x: x["min_score"])
 
-    # Write results
+    # Write results file
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    failures = [r for r in results if not r.get("passed", False)]
+
     output = {
         "run_date": datetime.now().isoformat(),
         "environment": env_label,
-        "url": base_url,
         "bot_id": BOT_ID,
-        "total": len(QUESTIONS),
+        "total": total,
         "passed": passed,
         "failed": failed,
         "errors": errors,
-        "pass_rate": f"{(passed / len(QUESTIONS)) * 100:.1f}%",
+        "pass_rate": f"{(passed / total) * 100:.1f}%",
+        "elapsed_seconds": round(elapsed, 1),
+        "confidence_threshold": confidence_threshold,
         "topic_summary": topic_summary,
         "results": results,
     }
-
-    # Separate failures section for easy scanning
-    failures = [r for r in results if not r.get("passed", False)]
     if failures:
         output["failures_summary"] = failures
 
@@ -657,34 +554,38 @@ def main():
     # Print summary
     print()
     print("=" * 70)
-    print(f"  PASSED: {passed}  FAILED: {failed}  ERRORS: {errors}  ({(passed / len(QUESTIONS)) * 100:.1f}%)")
-    print(f"  Results: {RESULTS_FILE}")
+    print(f"  PASSED: {passed}  FAILED: {failed}  ERRORS: {errors}  ({(passed / total) * 100:.1f}%)")
+    print(f"  Time: {elapsed:.1f}s  |  Results: {RESULTS_FILE}")
     print("=" * 70)
 
-    # Topic summary — sorted by min score (weakest first)
+    # Topic summary table
     print()
     print(f"  {'TOPIC':<40s} {'MIN':>6s} {'AVG':>6s} {'MAX':>6s}")
     print(f"  {'─' * 40} {'─' * 6} {'─' * 6} {'─' * 6}")
     for ts in topic_summary:
-        flag = " ◀" if ts["min_score"] < 0.6 else ""
+        flag = " ◀" if ts["min_score"] < confidence_threshold else ""
         print(f"  {ts['topic']:<40s} {ts['min_score']:>6.3f} {ts['avg_score']:>6.3f} {ts['max_score']:>6.3f}{flag}")
     print()
 
-    below_threshold = [ts for ts in topic_summary if ts["min_score"] < 0.6]
+    below_threshold = [ts for ts in topic_summary if ts["min_score"] < confidence_threshold]
     if below_threshold:
-        print(f"  WARNING: {len(below_threshold)} topic(s) have a variant scoring below 0.6 (self-heal trigger zone)")
+        print(f"  WARNING: {len(below_threshold)} topic(s) below {confidence_threshold} confidence threshold")
         print()
 
+    # Print failures at the end
     if failures:
-        print("  FAILURES:")
-        for f_item in failures:
-            print(f"    - [{f_item['category']}: {f_item.get('topic', '')}] {f_item['question']}")
-            if "fail_reason" in f_item:
-                print(f"      reason: {f_item['fail_reason']}")
-                print(f"      score:  {f_item.get('top_score', '?')}")
-            if "error" in f_item:
-                print(f"      error: {f_item['error']}")
+        print("  ━━ FAILURES ━━")
         print()
+        for f_item in failures:
+            score = f_item.get("top_score", "?")
+            match_info = ""
+            if "top_match" in f_item:
+                match_info = f" → {f_item['top_match'].get('heading', f_item['top_match'].get('id', ''))}"
+            print(f"    {score:>6} | {f_item['category']}: {f_item.get('topic', '')}")
+            print(f"           {f_item['question']}{match_info}")
+            if "error" in f_item:
+                print(f"           ERROR: {f_item['error']}")
+            print()
 
     sys.exit(0 if failed == 0 and errors == 0 else 1)
 

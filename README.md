@@ -50,9 +50,15 @@ Local development uses Docker Compose (nginx + LocalStack) and a Flask dev serve
 │   ├── build_lambda.sh        ← Package Lambda zip (.build/bot-factory.zip)
 │   ├── package_streaming.sh   ← Package streaming Lambda zip (.build/streaming.zip)
 │   ├── scaffold_bot.py        ← Scaffold a new bot's local structure
+│   ├── new-version.sh         ← Start a new version (branch + release notes stub)
 │   ├── gen_api_key.py         ← Generate bot-scoped API keys
 │   ├── setup_bot_s3.sh        ← Upload all bots to LocalStack S3 (used by make up)
 │   └── init-dynamodb.sh       ← Create DynamoDB tables in LocalStack
+│
+├── Versions/                  ← Release notes + enhancement docs per version
+│   ├── v1.0.0/
+│   ├── v2.0.0/
+│   └── ...
 │
 ├── terraform/                 ← Infrastructure as code (S3, DynamoDB, IAM, Lambda)
 ├── dev_server.py              ← Flask dev server (SSE streaming local testing)

@@ -6,7 +6,7 @@
         gen-key gen-key-prod env \
         init local local-stop test-chat help \
         setup-bot setup-bot-prod \
-        sync-data
+        sync-data new-version
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -202,8 +202,8 @@ test-self-heal:
 test-coverage:
 	python3 scripts/test_knowledge_coverage.py
 
-test-coverage-local:
-	python3 scripts/test_knowledge_coverage.py --local
+test-coverage-prod:
+	python3 scripts/test_knowledge_coverage.py --prod
 
 # ─────────────────────────────────────────────────────────────
 # Code Quality
@@ -402,6 +402,9 @@ scaffold:
 scaffold-prod:
 	@test -n "$(bot)" || (echo "Usage: make scaffold-prod bot={bot_id}" && exit 1)
 	APP_ENV=production python3 scripts/scaffold_bot.py $(bot)
+
+new-version:
+	@./scripts/new-version.sh $(if $(desc),"$(desc)",)
 
 # ─────────────────────────────────────────────────────────────
 # Full Bot Setup (deploy config + load data + embed + API key)
