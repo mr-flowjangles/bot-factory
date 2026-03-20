@@ -98,6 +98,7 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 Enhancement docs live in `Docs/Enhancements/{version}/` (date-prefixed):
 - **V2.0.0 — Self-Healing Knowledge Base** (`V2.0.0/2026-03-18-self-healing-knowledge-base.md`) — When a bot can't answer a question (low RAG confidence), a background agent generates a YML data file via LLM, validates it, embeds it, and backfills the knowledge base. Config-driven (`bot.agentic.self_heal`).
 - **V2.0.1 — Production Self-Heal + Chat UX** (`V2.0.1/2026-03-18-production-self-heal.md`) — Self-heal moved to dedicated async Lambda (threads die in Lambda). Cached boto3 client. Chat UX: bot label + typing dots appear together.
+- **V2.0.2 — Embedding Context + Search Term Enrichment** (`V2.0.2/2026-03-19-embedding-context.md`) — Config-driven `embedding_context` prepended to both document embeddings and queries so the embedding model correctly interprets domain abbreviations. Search term enrichment + self-heal duplicate cleanup. Coverage: 99.3% pass rate, min score 0.745.
 
 ## Production Deployment Notes
 

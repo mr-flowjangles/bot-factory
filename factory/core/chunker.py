@@ -139,6 +139,25 @@ def chunk_entry(entry: dict) -> str:
     return text
 
 
+def load_embedding_context(bot_id: str) -> str:
+    """Load the bot's embedding_context from config.yml (if defined).
+
+    This preamble is prepended to every chunk before embedding so the
+    embedding model understands domain-specific abbreviations and jargon.
+    """
+    try:
+        s3 = get_s3_client()
+        key = f"{S3_PREFIX}/{bot_id}/config.yml"
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+        config = yaml.safe_load(obj["Body"].read().decode("utf-8"))
+        ctx = config.get("bot", {}).get("rag", {}).get("embedding_context", "")
+        if ctx:
+            print(f"  Embedding context: {ctx[:80]}...")
+        return ctx
+    except Exception:
+        return ""
+
+
 def load_bot_data(bot_id: str) -> list[dict]:
     """
     Main entry point. Load and chunk all data for a bot.
@@ -149,6 +168,7 @@ def load_bot_data(bot_id: str) -> list[dict]:
     print(f"Loading data for bot: {bot_id}")
     print(f"  Source: s3://{S3_BUCKET}/{S3_PREFIX}/{bot_id}/data/")
 
+    embedding_context = load_embedding_context(bot_id)
     entries = load_yaml_files(bot_id)
 
     if not entries:
@@ -162,6 +182,9 @@ def load_bot_data(bot_id: str) -> list[dict]:
         if not text or not text.strip():
             print(f"  Skipping empty entry: {entry.get('id')}")
             continue
+
+        if embedding_context:
+            text = f"{embedding_context}\n\n{text}"
 
         chunks.append(
             {

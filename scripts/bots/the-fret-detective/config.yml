@@ -18,6 +18,7 @@ bot:
     embedding_model: "openai"
     top_k: 10
     similarity_threshold: 0.4
+    embedding_context: "Guitar knowledge base. Common abbreviations: Am = A minor chord, Em = E minor chord, Dm = D minor chord, Cmaj7 = C major 7 chord, E7 = E dominant 7 chord, A7 = A dominant 7 chord, EADGBE = standard tuning string names low to high. When a user says 'show me an A' or 'show me a G' they mean the guitar chord."
 
   boundaries:
     discuss_guitar: true

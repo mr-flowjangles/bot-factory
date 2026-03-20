@@ -103,9 +103,25 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
+def _load_embedding_context(bot_id: str) -> str:
+    """Load the bot's embedding_context from config so queries get the same
+    domain preamble that was used when generating document embeddings."""
+    try:
+        from .bot_utils import load_bot_config
+        config = load_bot_config(bot_id)
+        return config.get("bot", {}).get("rag", {}).get("embedding_context", "")
+    except Exception:
+        return ""
+
+
 def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_threshold: float) -> list[dict]:
     """Retrieve the most relevant chunks for a query, scoped to a bot."""
     logger.info(f"[retrieval:{bot_id}] query='{query[:60]}'")
+
+    embedding_context = _load_embedding_context(bot_id)
+    if embedding_context:
+        query = f"{embedding_context}\n\n{query}"
+        logger.info(f"[retrieval:{bot_id}] prepended embedding_context ({len(embedding_context)} chars)")
 
     query_embedding = generate_query_embedding(query)
     items = get_embeddings(bot_id)

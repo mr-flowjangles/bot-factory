@@ -199,6 +199,12 @@ test:
 test-self-heal:
 	python3 scripts/test_self_heal.py
 
+test-coverage:
+	python3 scripts/test_knowledge_coverage.py
+
+test-coverage-local:
+	python3 scripts/test_knowledge_coverage.py --local
+
 # ─────────────────────────────────────────────────────────────
 # Code Quality
 # ─────────────────────────────────────────────────────────────
