@@ -3,13 +3,13 @@ Self-Healing Knowledge Base — Orchestrator
 
 When a bot can't answer a question (low RAG confidence), this module:
 1. Checks if the question is within the bot's domain (boundary check)
-2. Checks for duplicate content (embedding similarity)
+2. Checks the knowledge manifest to see if the topic is already covered (manifest check)
+   Falls back to cosine duplicate check if no manifest exists.
 3. Generates a YML data file via LLM
 4. Validates the generated content via a second LLM call
 5. Uploads the YML to S3
 6. Generates an embedding and stores it in DynamoDB (additive)
-7. Invalidates the in-memory embedding cache
-8. Sends a notification email via SES
+7. Sends a notification email via SES
 
 Runs as a background thread locally, or as a separate Lambda in production.
 """
@@ -22,7 +22,7 @@ import logging
 import yaml
 import boto3
 
-from .self_heal_prompts import BOUNDARY_CHECK_PROMPT, YML_GENERATION_PROMPT, VALIDATION_PROMPT
+from .self_heal_prompts import BOUNDARY_CHECK_PROMPT, MANIFEST_CHECK_PROMPT, YML_GENERATION_PROMPT, VALIDATION_PROMPT
 from .retrieval import (
     generate_query_embedding,
     get_embeddings,
@@ -76,12 +76,16 @@ def _get_bedrock_client():
     return boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
 
-def _llm_call(prompt: str) -> str:
+MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+MODEL_SONNET = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+
+
+def _llm_call(prompt: str, model: str = MODEL_SONNET, max_tokens: int = 2000) -> str:
     """Make a single LLM call to Bedrock Claude and return the text response."""
     client = _get_bedrock_client()
     response = client.converse(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
-        inferenceConfig={"maxTokens": 2000},
+        modelId=model,
+        inferenceConfig={"maxTokens": max_tokens},
         messages=[{"role": "user", "content": [{"text": prompt}]}],
     )
     return response["output"]["message"]["content"][0]["text"]
@@ -124,7 +128,7 @@ def _boundary_check(question: str, config: dict) -> bool:
         question=question,
     )
 
-    response = _llm_call(prompt).strip().lower()
+    response = _llm_call(prompt, model=MODEL_HAIKU, max_tokens=100).strip().lower()
     in_bounds = response.startswith("yes")
     status = "IN" if in_bounds else "OUT"
     print(f"  [self_heal] boundary_check: {status} — {response[:100]}")
@@ -155,6 +159,47 @@ def _duplicate_check(bot_id: str, question: str, threshold: float = 0.6) -> bool
         logger.warning(f"[self_heal:{bot_id}] duplicate check failed: {e}")
 
     return False
+
+
+def _load_manifest(bot_id: str) -> str | None:
+    """Load the knowledge manifest from S3. Returns YAML text or None if not found."""
+    try:
+        s3 = _get_s3_client()
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f"bots/{bot_id}/manifest.yml")
+        return obj["Body"].read().decode("utf-8")
+    except Exception:
+        return None
+
+
+def _manifest_check(bot_id: str, question: str, config: dict) -> bool:
+    """Check if the question is already covered by existing knowledge.
+
+    Returns True if the topic is covered (i.e. should skip generation).
+    Falls back to _duplicate_check if no manifest exists.
+    """
+    manifest_text = _load_manifest(bot_id)
+
+    if manifest_text is None:
+        logger.info(f"[self_heal:{bot_id}] no manifest found, falling back to duplicate check")
+        agentic = config.get("bot", {}).get("agentic", {})
+        threshold = agentic.get("confidence_threshold", 0.6)
+        return _duplicate_check(bot_id, question, threshold=threshold)
+
+    bot = config.get("bot", {})
+    bot_name = bot.get("name", bot.get("id", "unknown"))
+
+    prompt = MANIFEST_CHECK_PROMPT.format(
+        bot_name=bot_name,
+        manifest=manifest_text,
+        question=question,
+    )
+
+    response = _llm_call(prompt, model=MODEL_HAIKU, max_tokens=100).strip().lower()
+    is_covered = response.startswith("covered")
+    status = "COVERED" if is_covered else "NOT_COVERED"
+    print(f"  [self_heal:{bot_id}] manifest_check: {status} — {response[:100]}")
+    logger.info(f"[self_heal:{bot_id}] manifest_check: {status} — {response[:100]}")
+    return is_covered
 
 
 def _s3_key_exists(s3_key: str) -> bool:
@@ -223,7 +268,7 @@ def _validate_content(question: str, content: str, config: dict) -> bool:
         content=content,
     )
 
-    response = _llm_call(prompt).strip().lower()
+    response = _llm_call(prompt, model=MODEL_HAIKU, max_tokens=100).strip().lower()
     passed = response.startswith("pass")
     logger.info(f"[self_heal] validation: {'PASS' if passed else 'FAIL'} — {response[:100]}")
     return passed
@@ -276,12 +321,10 @@ def run_self_heal(bot_id: str, question: str, config: dict, on_complete_callback
         print(f"  [self_heal:{bot_id}] question out of bounds, skipping")
         return
 
-    # 2. Duplicate check — use the bot's confidence threshold so it stays in sync
-    #    with the self-heal trigger decision
-    agentic = config.get("bot", {}).get("agentic", {})
-    dup_threshold = agentic.get("confidence_threshold", 0.6)
-    if _duplicate_check(bot_id, question, threshold=dup_threshold):
-        print(f"  [self_heal:{bot_id}] similar content exists (threshold={dup_threshold}), skipping")
+    # 2. Manifest check — LLM reads the knowledge TOC to decide if topic is covered
+    #    Falls back to cosine duplicate check if no manifest exists
+    if _manifest_check(bot_id, question, config):
+        print(f"  [self_heal:{bot_id}] topic already covered, skipping")
         return
 
     # 3. Check if S3 file already exists

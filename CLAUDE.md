@@ -92,6 +92,7 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 - **Multi-bot single deployment:** All bots share the same Lambda/infra; bot_id scopes everything (S3 paths, DynamoDB queries, caches)
 - **Context-aware RAG retrieval:** Follow-up queries are enriched with the last exchange (user + assistant) so vague references like "around there" resolve correctly via `_build_enriched_query()` in `chatbot.py`
 - **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
+- **Knowledge manifest for self-heal:** A manifest (`bots/{bot_id}/manifest.yml`) lists all KB entries by category/heading/search_terms. Self-heal asks an LLM to read the manifest before generating — catches semantic duplicates that cosine similarity misses. Auto-generated after `make embed`.
 
 ## Versions
 
@@ -101,6 +102,7 @@ Release notes and enhancement docs live in `Versions/v{version}/`:
 - **v2.0.1 — Production Self-Heal + Chat UX** — Self-heal moved to dedicated async Lambda. Cached boto3 client. Chat UX polish.
 - **v2.0.2 — Embedding Context + Search Term Enrichment** — Config-driven `embedding_context` for domain abbreviations. Coverage: 99.3% pass rate.
 - **v2.0.3 — Prompt Tuning for Retrieval Utilization** — Prompt updated to reason about retrieved context instead of requiring exact wording matches.
+- **v2.0.4 — Knowledge Base Manifest** — Self-heal uses an LLM-read manifest (topic TOC) instead of cosine similarity to detect duplicates. Eliminates false negatives from retrieval misses.
 
 ## Production Deployment Notes
 
