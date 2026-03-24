@@ -6,7 +6,8 @@
         gen-key gen-key-prod env \
         init local local-stop test-chat help \
         setup-bot setup-bot-prod \
-        sync-data new-version
+        sync-data new-version \
+        manifest manifest-prod
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -82,9 +83,11 @@ help:
 	@echo ""
 	@echo "  Embeddings"
 	@echo "  ──────────────────────────────────────────────────────────"
-	@printf "  %-38s %s\n" "embed bot={bot_id}"           "Generate embeddings (local)"
+	@printf "  %-38s %s\n" "embed bot={bot_id}"           "Generate embeddings + manifest (local)"
 	@printf "  %-38s %s\n" "embed-force bot={bot_id}"     "Regenerate without prompt"
-	@printf "  %-38s %s\n" "embed-prod bot={bot_id}"      "Generate embeddings (production)"
+	@printf "  %-38s %s\n" "embed-prod bot={bot_id}"      "Generate embeddings + manifest (prod)"
+	@printf "  %-38s %s\n" "manifest bot={bot_id}"        "Generate knowledge manifest (local)"
+	@printf "  %-38s %s\n" "manifest-prod bot={bot_id}"   "Generate knowledge manifest (prod)"
 	@echo ""
 	@echo "  API Keys"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -338,6 +341,8 @@ deploy-bot-prod:
 	aws s3 sync scripts/bots/$(bot)/data/ s3://$(PROD_BUCKET)/bots/$(bot)/data/
 	@echo "→ Generating embeddings..."
 	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+	@echo "→ Generating manifest..."
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 scripts/generate_manifest.py $(bot) --prod
 	@echo "═══ Bot $(bot) deployed ═══"
 
 # ─────────────────────────────────────────────────────────────
@@ -367,6 +372,8 @@ endif
 embed:
 	@test -n "$(bot)" || (echo "Usage: make embed bot={bot_id}" && exit 1)
 	PYTHONDONTWRITEBYTECODE=1 python3 -m factory.core.generate_embeddings $(bot) --force
+	@echo "→ Generating manifest..."
+	python3 scripts/generate_manifest.py $(bot)
 
 embed-force:
 	@test -n "$(bot)" || (echo "Usage: make embed-force bot={bot_id}" && exit 1)
@@ -376,6 +383,21 @@ embed-prod:
 	@test -n "$(bot)" || (echo "Usage: make embed-prod bot={bot_id}" && exit 1)
 	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first" && exit 1)
 	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 -m factory.core.generate_embeddings $(bot) --force
+	@echo "→ Generating manifest..."
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 scripts/generate_manifest.py $(bot) --prod
+
+# ─────────────────────────────────────────────────────────────
+# Knowledge Manifest
+# ─────────────────────────────────────────────────────────────
+
+manifest:
+	@test -n "$(bot)" || (echo "Usage: make manifest bot={bot_id}" && exit 1)
+	python3 scripts/generate_manifest.py $(bot)
+
+manifest-prod:
+	@test -n "$(bot)" || (echo "Usage: make manifest-prod bot={bot_id}" && exit 1)
+	@test -n "$(PROD_BUCKET)" || (echo "Error: Run 'make deploy-infra' first" && exit 1)
+	AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= APP_ENV=production BOT_DATA_BUCKET=$(PROD_BUCKET) python3 scripts/generate_manifest.py $(bot) --prod
 
 # ─────────────────────────────────────────────────────────────
 # API Keys

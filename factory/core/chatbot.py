@@ -95,11 +95,19 @@ def load_system_prompt(bot_id: str) -> str:
 
 
 def build_messages(user_message: str, context: str, conversation_history: list[dict]) -> list[dict]:
-    """Build the messages array for Bedrock converse."""
+    """Build the messages array for Bedrock converse.
+
+    Places a cachePoint after conversation history so prior turns are cached
+    across requests in a multi-turn conversation (90% input token savings on hits).
+    """
     messages = []
 
     for msg in conversation_history:
         messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
+
+    # Cache the conversation history prefix — stable across turns in a session
+    if messages:
+        messages[-1]["content"].append({"cachePoint": {"type": "default"}})
 
     user_content = f"""## Relevant Context:
 {context}
@@ -108,7 +116,8 @@ def build_messages(user_message: str, context: str, conversation_history: list[d
 {user_message}
 
 Remember: Keep your response short and conversational. Write in PLAIN TEXT ONLY - do not use ** or any markdown. \
-Use the context to answer even if the wording doesn't exactly match the question. Only say you can't answer if the context has nothing relevant."""
+Use the context to answer even if the wording doesn't exactly match the question. \
+Only say you can't answer if the context has nothing relevant."""
 
     messages.append({"role": "user", "content": [{"text": user_content}]})
     return messages
@@ -182,13 +191,17 @@ def generate_response(
     response = client.converse(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
+        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
     )
     t3 = time.time()
 
+    usage = response.get("usage", {})
+    cache_read = usage.get("cacheReadInputTokens", 0)
+    cache_write = usage.get("cacheWriteInputTokens", 0)
     logger.info(
         f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock={t3-t2:.3f}s | total={t3-t0:.3f}s"
+        f" | cache_read={cache_read} cache_write={cache_write}"
     )
 
     return {
@@ -242,10 +255,22 @@ def generate_response_stream(
     response = client.converse_stream(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
+        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
     )
 
     for event in response["stream"]:
         if "contentBlockDelta" in event:
             yield event["contentBlockDelta"]["delta"]["text"]
+        elif "metadata" in event:
+            usage = event["metadata"].get("usage", {})
+            cache_read = usage.get("cacheReadInputTokens", 0)
+            cache_write = usage.get("cacheWriteInputTokens", 0)
+            total_in = usage.get("inputTokens", 0)
+            print(
+                f"  [chatbot:{bot_id}] cache_read={cache_read} cache_write={cache_write}"
+                f" input={total_in} output={usage.get('outputTokens', 0)}"
+            )
+            logger.info(
+                f"[chatbot:{bot_id}] stream done | cache_read={cache_read} cache_write={cache_write}"
+            )

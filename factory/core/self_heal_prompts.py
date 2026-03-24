@@ -79,3 +79,30 @@ Answer with ONLY "pass" or "fail" followed by a brief explanation.
 Examples:
 pass — content is factually accurate and addresses the question well
 fail — the content incorrectly states that standard tuning is DADGAD"""
+
+
+MANIFEST_CHECK_PROMPT = """You are a knowledge base curator for a chatbot called "{bot_name}".
+
+Below is the bot's knowledge manifest — a table of contents listing every topic
+the bot knows about, organized by category. Each entry has a heading and search terms.
+
+--- MANIFEST ---
+{manifest}
+--- END MANIFEST ---
+
+A user asked: "{question}"
+
+Determine whether the bot's existing knowledge base ALREADY covers this question.
+Look at both headings AND search_terms for semantic overlap — the answer doesn't
+need to match exact words, just the same concept or topic.
+
+For example:
+- "How do I do hammer-ons?" IS covered by an entry with heading "Hammer-ons and pull-offs"
+- "What gauge strings should I use?" IS covered by an entry with search_terms containing "string gauge"
+- "How do I set up a Floyd Rose tremolo?" is NOT covered if no entry discusses Floyd Rose or tremolo systems
+
+Answer with ONLY "covered" or "not_covered" followed by a brief reason.
+
+Examples:
+covered — the entry "Hammer-ons and pull-offs" in Techniques covers this topic
+not_covered — no entries discuss Floyd Rose tremolo systems or floating bridges"""
