@@ -123,8 +123,11 @@ def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_thr
         query = f"{embedding_context}\n\n{query}"
         logger.info(f"[retrieval:{bot_id}] prepended embedding_context ({len(embedding_context)} chars)")
 
+    t_embed = time.time()
     query_embedding = generate_query_embedding(query)
+    t_dynamo = time.time()
     items = get_embeddings(bot_id)
+    t_cosine = time.time()
 
     results = []
     for item in items:
@@ -143,11 +146,13 @@ def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_thr
             )
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
+    t_done = time.time()
 
     top = results[0]["similarity"] if results else "N/A"
-    logger.info(
-        f"[retrieval:{bot_id}] found={len(results)} above threshold={similarity_threshold} "
-        f"top_score={top} returning top_{top_k}"
+    print(
+        f"[retrieval:{bot_id}] embed={t_dynamo-t_embed:.3f}s | dynamo={t_cosine-t_dynamo:.3f}s"
+        f" | cosine={t_done-t_cosine:.3f}s | items={len(items)} | top={top}",
+        flush=True,
     )
 
     return results[:top_k]
