@@ -59,3 +59,25 @@ def log_chat_interaction(bot_id: str, question: str, response: str, sources: lis
         )
     except Exception as e:
         logger.warning(f"Failed to log chat interaction for '{bot_id}': {e}")
+
+
+def log_visit(bot_id: str, user_agent: str = "", referrer: str = ""):
+    """Log a site visit to DynamoDB BotFactoryLogs table."""
+    try:
+        from .retrieval import get_dynamodb_connection
+
+        dynamodb = get_dynamodb_connection()
+        table = dynamodb.Table(LOGS_TABLE_NAME)
+
+        table.put_item(
+            Item={
+                "id": f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}",
+                "bot_id": bot_id,
+                "type": "visit",
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_agent": user_agent,
+                "referrer": referrer,
+            }
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log visit for '{bot_id}': {e}")

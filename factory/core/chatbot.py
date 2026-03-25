@@ -95,19 +95,11 @@ def load_system_prompt(bot_id: str) -> str:
 
 
 def build_messages(user_message: str, context: str, conversation_history: list[dict]) -> list[dict]:
-    """Build the messages array for Bedrock converse.
-
-    Places a cachePoint after conversation history so prior turns are cached
-    across requests in a multi-turn conversation (90% input token savings on hits).
-    """
+    """Build the messages array for Bedrock converse."""
     messages = []
 
     for msg in conversation_history:
         messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
-
-    # Cache the conversation history prefix — stable across turns in a session
-    if messages:
-        messages[-1]["content"].append({"cachePoint": {"type": "default"}})
 
     user_content = f"""## Relevant Context:
 {context}
