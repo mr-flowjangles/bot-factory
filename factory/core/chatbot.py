@@ -217,16 +217,14 @@ def generate_response_stream(
             'top_score' (highest similarity from RAG) for self-heal decisions.
     """
     t0 = time.time()
-    logger.info(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'")
+    print(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'", flush=True)
 
     if conversation_history is None:
         conversation_history = []
     if metadata_out is None:
         metadata_out = {}
 
-    logger.info(f"[chatbot:{bot_id}] conversation_history={len(conversation_history)} messages")
     enriched_query = _build_enriched_query(user_message, conversation_history)
-    logger.info(f"[chatbot:{bot_id}] enriched_query='{enriched_query[:120]}'")
     relevant_chunks = retrieve_relevant_chunks(
         bot_id=bot_id,
         query=enriched_query,
@@ -234,12 +232,12 @@ def generate_response_stream(
         similarity_threshold=similarity_threshold,
     )
     t1 = time.time()
+    print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s chunks={len(relevant_chunks)}", flush=True)
 
     # Expose top similarity score for self-heal confidence check
     top_score = relevant_chunks[0]["similarity"] if relevant_chunks else 0.0
     metadata_out["top_score"] = top_score
     metadata_out["chunk_count"] = len(relevant_chunks)
-    logger.info(f"[chatbot:{bot_id}] top_score={top_score:.3f} chunks={len(relevant_chunks)}")
 
     context = format_context_for_llm(relevant_chunks)
     messages = build_messages(user_message, context, conversation_history)
@@ -253,7 +251,7 @@ def generate_response_stream(
         system=[{"text": system_prompt}],
         messages=messages,
     )
-    logger.info(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt_build={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s")
+    print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s", flush=True)
 
     for event in response["stream"]:
         if "contentBlockDelta" in event:
