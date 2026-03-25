@@ -93,7 +93,7 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 - **Context-aware RAG retrieval:** Follow-up queries are enriched with the last exchange (user + assistant) so vague references like "around there" resolve correctly via `_build_enriched_query()` in `chatbot.py`
 - **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
 - **Knowledge manifest for self-heal:** A manifest (`bots/{bot_id}/manifest.yml`) lists all KB entries by category/heading/search_terms. Self-heal asks an LLM to read the manifest before generating — catches semantic duplicates that cosine similarity misses. Auto-generated after `make embed`.
-- **Prompt caching:** Only the system prompt has a `cachePoint` — it's the large, stable prefix that benefits from Bedrock's cache. Conversation history changes every turn, so caching it causes write overhead with no read hits.
+- **No prompt caching:** Bedrock prompt caching was removed — for low-traffic bots the 5-min cache TTL expires between most requests, so every call pays cache-write overhead with rare read hits. Net effect is slower, not faster.
 
 ## Versions
 
