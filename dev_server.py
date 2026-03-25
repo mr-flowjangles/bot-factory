@@ -5,6 +5,7 @@ Usage: python3 dev_server.py
 """
 
 import json
+import logging
 import os
 from dotenv import load_dotenv
 
@@ -17,6 +18,8 @@ from factory.core.retrieval import retrieve_relevant_chunks
 from factory.core.bot_utils import load_bot_config, log_chat_interaction, log_visit
 from factory.core.auth import validate_api_key
 from factory.core.self_heal import invoke_self_heal_async, get_pending_result
+
+logging.getLogger().setLevel(logging.INFO)
 
 app = Flask(__name__)
 
