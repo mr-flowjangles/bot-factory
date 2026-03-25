@@ -183,7 +183,7 @@ def generate_response(
     response = client.converse(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
+        system=[{"text": system_prompt}],
         messages=messages,
     )
     t3 = time.time()
@@ -247,7 +247,7 @@ def generate_response_stream(
     response = client.converse_stream(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
+        system=[{"text": system_prompt}],
         messages=messages,
     )
 
