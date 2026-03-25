@@ -94,7 +94,8 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 - **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
 - **Knowledge manifest for self-heal:** A manifest (`bots/{bot_id}/manifest.yml`) lists all KB entries by category/heading/search_terms. Self-heal asks an LLM to read the manifest before generating — catches semantic duplicates that cosine similarity misses. Auto-generated after `make embed`.
 - **Prompt caching:** System prompt has a `cachePoint` for Bedrock prompt caching — saves input tokens on warm Lambda containers handling multiple requests in a session. Only on the system prompt (stable prefix); never on conversation history (changes every turn, causes write-only overhead).
-- **Performance baseline:** The Fret Detective streams responses in ~3s on Sonnet 4. If CloudWatch REPORT shows >5s, something is wrong — check the `[chatbot:]` timing logs for retrieval/prompt/bedrock breakdown.
+- **Debug timing:** All `print(flush=True)` timing lines in retrieval.py and chatbot.py are gated behind `DEBUG_TIMING` env var. Set `DEBUG_TIMING=1` in the Lambda console to enable — no redeploy needed. Reads per-call, not at module load.
+- **Performance baseline:** The Fret Detective streams responses in ~3s on Sonnet 4. If CloudWatch REPORT shows >5s, something is wrong — set `DEBUG_TIMING=1` and check the `[chatbot:]` / `[retrieval:]` timing logs for retrieval/prompt/bedrock breakdown.
 
 ## Versions
 
@@ -107,9 +108,10 @@ Release notes and enhancement docs live in `Versions/v{version}/`:
 - **v2.0.4 — Knowledge Base Manifest** — Self-heal uses an LLM-read manifest (topic TOC) instead of cosine similarity to detect duplicates. Eliminates false negatives from retrieval misses.
 - **v2.0.5 — Tuning Update** — Removed conversation history cachePoint. Wired up chat/visit logging.
 - **v2.0.6 — Performance Tuning** — Embedding cache in Lambda memory (eliminates 1.7s DynamoDB scan). System prompt cachePoint restored. Observability timing breakdowns in CloudWatch.
+- **v2.0.7 — Debug Timing Guard** — Gated all timing prints behind `DEBUG_TIMING` env var. Toggleable from Lambda console without redeploying.
 
 ## Production Deployment Notes
 
 - The streaming Lambda runs Flask `dev_server.py` via Lambda Web Adapter (not `streaming_handler.py` directly)
 - Deploy Lambda code: `make deploy-streaming` (may need `-auto-approve` for non-interactive terraform)
-- Embeddings are read fresh from DynamoDB each request — no cache to bust after re-embedding
+- Embeddings are cached in Lambda memory — new embeddings (including self-heal) are picked up on the next cold start
