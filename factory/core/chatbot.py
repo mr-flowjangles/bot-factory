@@ -216,6 +216,7 @@ def generate_response_stream(
         metadata_out: If provided, populated with retrieval metadata including
             'top_score' (highest similarity from RAG) for self-heal decisions.
     """
+    t0 = time.time()
     logger.info(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'")
 
     if conversation_history is None:
@@ -232,6 +233,7 @@ def generate_response_stream(
         top_k=top_k,
         similarity_threshold=similarity_threshold,
     )
+    t1 = time.time()
 
     # Expose top similarity score for self-heal confidence check
     top_score = relevant_chunks[0]["similarity"] if relevant_chunks else 0.0
@@ -242,6 +244,7 @@ def generate_response_stream(
     context = format_context_for_llm(relevant_chunks)
     messages = build_messages(user_message, context, conversation_history)
     system_prompt = load_system_prompt(bot_id)
+    t2 = time.time()
 
     client = get_bedrock_client()
     response = client.converse_stream(
@@ -250,6 +253,7 @@ def generate_response_stream(
         system=[{"text": system_prompt}],
         messages=messages,
     )
+    logger.info(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt_build={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s")
 
     for event in response["stream"]:
         if "contentBlockDelta" in event:
