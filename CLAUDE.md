@@ -86,14 +86,14 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 
 ## Key Design Patterns
 
-- **No embedding cache:** Embeddings are read fresh from DynamoDB on every request so self-healed content is immediately available
+- **Embedding cache:** Embeddings are cached in Lambda memory for the container lifetime — eliminates a 1.7s DynamoDB round-trip on warm requests. Self-healed content is picked up on the next cold start
 - **Kill-and-fill embeddings:** Regeneration deletes only the target bot's embeddings, leaving others untouched
 - **Environment abstraction:** `APP_ENV` env var switches between LocalStack endpoints (local) and real AWS (production)
 - **Multi-bot single deployment:** All bots share the same Lambda/infra; bot_id scopes everything (S3 paths, DynamoDB queries, caches)
 - **Context-aware RAG retrieval:** Follow-up queries are enriched with the last exchange (user + assistant) so vague references like "around there" resolve correctly via `_build_enriched_query()` in `chatbot.py`
 - **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
 - **Knowledge manifest for self-heal:** A manifest (`bots/{bot_id}/manifest.yml`) lists all KB entries by category/heading/search_terms. Self-heal asks an LLM to read the manifest before generating — catches semantic duplicates that cosine similarity misses. Auto-generated after `make embed`.
-- **No prompt caching:** Bedrock prompt caching was removed — for low-traffic bots the 5-min cache TTL expires between most requests, so every call pays cache-write overhead with rare read hits. Net effect is slower, not faster.
+- **Prompt caching:** System prompt has a `cachePoint` for Bedrock prompt caching — saves input tokens on warm Lambda containers handling multiple requests in a session. Only on the system prompt (stable prefix); never on conversation history (changes every turn, causes write-only overhead).
 - **Performance baseline:** The Fret Detective streams responses in ~3s on Sonnet 4. If CloudWatch REPORT shows >5s, something is wrong — check the `[chatbot:]` timing logs for retrieval/prompt/bedrock breakdown.
 
 ## Versions
