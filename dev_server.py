@@ -14,7 +14,7 @@ from flask import Flask, request, Response, stream_with_context
 from flask_cors import CORS
 from factory.core.chatbot import generate_response_stream
 from factory.core.retrieval import retrieve_relevant_chunks
-from factory.core.bot_utils import load_bot_config
+from factory.core.bot_utils import load_bot_config, log_chat_interaction, log_visit
 from factory.core.auth import validate_api_key
 from factory.core.self_heal import invoke_self_heal_async, get_pending_result
 
@@ -36,6 +36,16 @@ def index():
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}
+
+
+@app.route("/visit", methods=["POST"])
+def visit():
+    body = request.get_json() or {}
+    bot_id = body.get("bot_id", "unknown")
+    user_agent = request.headers.get("User-Agent", "")
+    referrer = request.headers.get("Referer", "")
+    log_visit(bot_id, user_agent=user_agent, referrer=referrer)
+    return {"status": "ok"}
 
 
 @app.route("/chat", methods=["POST"])
@@ -95,6 +105,7 @@ def chat():
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
             metadata = {}
+            full_response = []
             for token in generate_response_stream(
                 bot_id=bot_id,
                 user_message=message,
@@ -103,7 +114,12 @@ def chat():
                 conversation_history=conversation_history,
                 metadata_out=metadata,
             ):
+                full_response.append(token)
                 yield f"data: {json.dumps({'token': token})}\n\n"
+
+            # Log the interaction
+            log_chat_interaction(bot_id, message, "".join(full_response), sources)
+
             # Invoke self-heal BEFORE [DONE] — all tokens are already streamed,
             # but Lambda can freeze the container after [DONE] so we must fire first.
             top_score = metadata.get("top_score", 1.0)
