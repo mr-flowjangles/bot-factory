@@ -17,6 +17,10 @@ from boto3.dynamodb.conditions import Key
 
 logger = logging.getLogger(__name__)
 
+
+def _debug_timing():
+    return os.getenv("DEBUG_TIMING", "").lower() in ("1", "true")
+
 BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBEDDING_DIMENSIONS = 1024
 RAG_TABLE_NAME = os.getenv("RAG_TABLE_NAME", "BotFactoryRAG")
@@ -46,7 +50,8 @@ def get_embeddings(bot_id: str) -> list[dict]:
     """
     if bot_id in _embeddings_cache:
         items = _embeddings_cache[bot_id]
-        print(f"[retrieval:{bot_id}] cache hit — {len(items)} items", flush=True)
+        if _debug_timing():
+            print(f"[retrieval:{bot_id}] cache hit — {len(items)} items", flush=True)
         return items
 
     t_start = time.time()
@@ -73,7 +78,8 @@ def get_embeddings(bot_id: str) -> list[dict]:
 
     _embeddings_cache[bot_id] = items
     t_query = time.time() - t_start
-    print(f"[retrieval:{bot_id}] cache miss — {len(items)} items, {pages} page(s), {t_query:.3f}s", flush=True)
+    if _debug_timing():
+        print(f"[retrieval:{bot_id}] cache miss — {len(items)} items, {pages} page(s), {t_query:.3f}s", flush=True)
     return items
 
 
@@ -162,11 +168,12 @@ def retrieve_relevant_chunks(bot_id: str, query: str, top_k: int, similarity_thr
     t_done = time.time()
 
     top = results[0]["similarity"] if results else "N/A"
-    print(
-        f"[retrieval:{bot_id}] embed={t_dynamo-t_embed:.3f}s | dynamo={t_cosine-t_dynamo:.3f}s"
-        f" | cosine={t_done-t_cosine:.3f}s | items={len(items)} | top={top}",
-        flush=True,
-    )
+    if _debug_timing():
+        print(
+            f"[retrieval:{bot_id}] embed={t_dynamo-t_embed:.3f}s | dynamo={t_cosine-t_dynamo:.3f}s"
+            f" | cosine={t_done-t_cosine:.3f}s | items={len(items)} | top={top}",
+            flush=True,
+        )
 
     return results[:top_k]
 

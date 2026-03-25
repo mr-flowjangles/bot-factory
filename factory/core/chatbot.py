@@ -16,6 +16,10 @@ from .retrieval import retrieve_relevant_chunks, format_context_for_llm
 
 logger = logging.getLogger(__name__)
 
+
+def _debug_timing():
+    return os.getenv("DEBUG_TIMING", "").lower() in ("1", "true")
+
 # Cached resources — persist across warm Lambda invocations
 _bedrock_client = None
 _system_prompts = {}
@@ -217,7 +221,8 @@ def generate_response_stream(
             'top_score' (highest similarity from RAG) for self-heal decisions.
     """
     t0 = time.time()
-    print(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'", flush=True)
+    if _debug_timing():
+        print(f"[chatbot:{bot_id}] stream start query='{user_message[:60]}'", flush=True)
 
     if conversation_history is None:
         conversation_history = []
@@ -232,7 +237,8 @@ def generate_response_stream(
         similarity_threshold=similarity_threshold,
     )
     t1 = time.time()
-    print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s chunks={len(relevant_chunks)}", flush=True)
+    if _debug_timing():
+        print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s chunks={len(relevant_chunks)}", flush=True)
 
     # Expose top similarity score for self-heal confidence check
     top_score = relevant_chunks[0]["similarity"] if relevant_chunks else 0.0
@@ -251,7 +257,8 @@ def generate_response_stream(
         system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
     )
-    print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s", flush=True)
+    if _debug_timing():
+        print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s", flush=True)
 
     for event in response["stream"]:
         if "contentBlockDelta" in event:
@@ -261,10 +268,11 @@ def generate_response_stream(
             cache_read = usage.get("cacheReadInputTokens", 0)
             cache_write = usage.get("cacheWriteInputTokens", 0)
             total_in = usage.get("inputTokens", 0)
-            print(
-                f"  [chatbot:{bot_id}] cache_read={cache_read} cache_write={cache_write}"
-                f" input={total_in} output={usage.get('outputTokens', 0)}"
-            )
+            if _debug_timing():
+                print(
+                    f"  [chatbot:{bot_id}] cache_read={cache_read} cache_write={cache_write}"
+                    f" input={total_in} output={usage.get('outputTokens', 0)}"
+                )
             logger.info(
                 f"[chatbot:{bot_id}] stream done | cache_read={cache_read} cache_write={cache_write}"
             )
