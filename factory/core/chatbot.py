@@ -183,7 +183,7 @@ def generate_response(
     response = client.converse(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
+        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
     )
     t3 = time.time()
@@ -248,7 +248,7 @@ def generate_response_stream(
     response = client.converse_stream(
         modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
         inferenceConfig={"maxTokens": 1000},
-        system=[{"text": system_prompt}],
+        system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
     )
     print(f"[chatbot:{bot_id}] retrieval={t1-t0:.3f}s | prompt={t2-t1:.3f}s | bedrock_call={time.time()-t2:.3f}s", flush=True)

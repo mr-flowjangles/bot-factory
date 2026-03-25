@@ -2,8 +2,9 @@
 Retrieval Module (Parameterized)
 
 Performs semantic search against stored embeddings in DynamoDB,
-scoped by bot_id. Queries the GSI on bot_id each request so
-self-healed content is immediately available.
+scoped by bot_id. Embeddings are cached in memory for the lifetime
+of the Lambda container. Self-healed content is picked up on the
+next cold start.
 """
 
 import os
@@ -34,9 +35,20 @@ def get_dynamodb_connection():
     )
 
 
+_embeddings_cache = {}
+
+
 def get_embeddings(bot_id: str) -> list[dict]:
-    """Load embeddings for a specific bot via GSI query."""
-    logger.info(f"[retrieval:{bot_id}] querying GSI...")
+    """Load embeddings for a specific bot via GSI query.
+
+    Cached in memory for the Lambda container lifetime — eliminates the
+    1.7s DynamoDB round-trip on warm invocations.
+    """
+    if bot_id in _embeddings_cache:
+        items = _embeddings_cache[bot_id]
+        print(f"[retrieval:{bot_id}] cache hit — {len(items)} items", flush=True)
+        return items
+
     t_start = time.time()
 
     dynamodb = get_dynamodb_connection()
@@ -59,8 +71,9 @@ def get_embeddings(bot_id: str) -> list[dict]:
         items.extend(response.get("Items", []))
         pages += 1
 
+    _embeddings_cache[bot_id] = items
     t_query = time.time() - t_start
-    logger.info(f"[retrieval:{bot_id}] GSI query — {len(items)} items, {pages} page(s), {t_query:.3f}s")
+    print(f"[retrieval:{bot_id}] cache miss — {len(items)} items, {pages} page(s), {t_query:.3f}s", flush=True)
     return items
 
 
