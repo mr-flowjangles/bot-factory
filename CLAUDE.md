@@ -105,6 +105,8 @@ Release notes and enhancement docs live in `Versions/v{version}/`:
 - **v2.0.2 — Embedding Context + Search Term Enrichment** — Config-driven `embedding_context` for domain abbreviations. Coverage: 99.3% pass rate.
 - **v2.0.3 — Prompt Tuning for Retrieval Utilization** — Prompt updated to reason about retrieved context instead of requiring exact wording matches.
 - **v2.0.4 — Knowledge Base Manifest** — Self-heal uses an LLM-read manifest (topic TOC) instead of cosine similarity to detect duplicates. Eliminates false negatives from retrieval misses.
+- **v2.0.5 — Tuning Update** — Removed conversation history cachePoint. Wired up chat/visit logging.
+- **v2.0.6 — Performance Tuning** — Embedding cache in Lambda memory (eliminates 1.7s DynamoDB scan). System prompt cachePoint restored. Observability timing breakdowns in CloudWatch.
 
 ## Production Deployment Notes
 
