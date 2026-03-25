@@ -94,6 +94,7 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 - **Conversation history:** The client sends `conversation_history` in each request; both handlers pass it through to Claude for multi-turn awareness
 - **Knowledge manifest for self-heal:** A manifest (`bots/{bot_id}/manifest.yml`) lists all KB entries by category/heading/search_terms. Self-heal asks an LLM to read the manifest before generating — catches semantic duplicates that cosine similarity misses. Auto-generated after `make embed`.
 - **No prompt caching:** Bedrock prompt caching was removed — for low-traffic bots the 5-min cache TTL expires between most requests, so every call pays cache-write overhead with rare read hits. Net effect is slower, not faster.
+- **Performance baseline:** The Fret Detective streams responses in ~3s on Sonnet 4. If CloudWatch REPORT shows >5s, something is wrong — check the `[chatbot:]` timing logs for retrieval/prompt/bedrock breakdown.
 
 ## Versions
 
