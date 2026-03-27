@@ -326,7 +326,7 @@ deploy-streaming: package-streaming
 	terraform -chdir=terraform apply -target=aws_lambda_function.streaming -target=aws_lambda_function_url.streaming
 	@echo ""
 	@echo "═══ Stream URL ═══"
-	@terraform -chdir=terraform output -raw streaming_url
+	@terraform -chdir=terraform output -raw stream_function_url
 	@echo ""
 
 ## Deploy a bot to prod (run per bot, re-run on data changes)

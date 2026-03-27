@@ -109,6 +109,7 @@ Release notes and enhancement docs live in `Versions/v{version}/`:
 - **v2.0.5 — Tuning Update** — Removed conversation history cachePoint. Wired up chat/visit logging.
 - **v2.0.6 — Performance Tuning** — Embedding cache in Lambda memory (eliminates 1.7s DynamoDB scan). System prompt cachePoint restored. Observability timing breakdowns in CloudWatch.
 - **v2.0.7 — Debug Timing Guard** — Gated all timing prints behind `DEBUG_TIMING` env var. Toggleable from Lambda console without redeploying.
+- **v2.1.0 — Cost Optimization + Content Expansion** — Server-side conversation history cap (6 messages). Input lock during streaming + character-by-character rendering. Complete scale boxes (minor/major pentatonic, blues) and all 7 modes with tab patterns.
 
 ## Production Deployment Notes
 
