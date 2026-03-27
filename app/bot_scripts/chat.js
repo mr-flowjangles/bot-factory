@@ -32,6 +32,7 @@ const config = window.BOT_CONFIG || {
 
 // Conversation history — persists for the browser session.
 const conversationHistory = [];
+let isSending = false;
 
 /**
  * Default message formatter — renders text as plain text with line breaks.
@@ -103,7 +104,10 @@ function sendSuggestion(chip) {
  */
 async function sendMessage() {
   const message = chatInput.value.trim();
-  if (!message) return;
+  if (!message || isSending) return;
+
+  isSending = true;
+  chatInput.disabled = true;
 
   addMessage(message, "user");
   chatInput.value = "";
@@ -169,7 +173,14 @@ async function sendMessage() {
         typingRemoved = true;
       }
 
-      fullResponse += tokenQueue.shift();
+      // Drip one character at a time for smooth rendering
+      const next = tokenQueue[0];
+      fullResponse += next.charAt(0);
+      if (next.length > 1) {
+        tokenQueue[0] = next.slice(1);
+      } else {
+        tokenQueue.shift();
+      }
 
       while (div.childNodes.length > 1) {
         div.removeChild(div.lastChild);
@@ -178,7 +189,7 @@ async function sendMessage() {
       formatter(fullResponse, div);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
-      setTimeout(renderNext, 30);
+      setTimeout(renderNext, 50);
     }
 
     while (true) {
@@ -224,6 +235,10 @@ async function sendMessage() {
     if (!typingRemoved) typing.remove();
     const formatter = config.formatMessage || defaultFormatMessage;
     formatter("Sorry, I couldn't connect. Try again in a moment.", div);
+  } finally {
+    isSending = false;
+    chatInput.disabled = false;
+    chatInput.focus();
   }
 }
 
