@@ -100,9 +100,12 @@ def load_system_prompt(bot_id: str) -> str:
 
 def build_messages(user_message: str, context: str, conversation_history: list[dict]) -> list[dict]:
     """Build the messages array for Bedrock converse."""
+    # Only keep the last 6 messages (3 exchanges) to limit input tokens
+    recent_history = conversation_history[-6:]
+
     messages = []
 
-    for msg in conversation_history:
+    for msg in recent_history:
         messages.append({"role": msg["role"], "content": [{"text": msg["content"]}]})
 
     user_content = f"""## Relevant Context:
