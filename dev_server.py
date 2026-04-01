@@ -11,11 +11,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import flask
 from flask import Flask, request, Response, stream_with_context
 from flask_cors import CORS
 from factory.core.chatbot import generate_response_stream
 from factory.core.retrieval import retrieve_relevant_chunks
-from factory.core.bot_utils import load_bot_config, log_chat_interaction, log_visit
+from factory.core.bot_utils import load_bot_config, log_chat_interaction
 from factory.core.auth import validate_api_key
 from factory.core.self_heal import invoke_self_heal_async, get_pending_result
 
@@ -36,19 +37,35 @@ def index():
         return Response(f.read(), content_type="text/html")
 
 
+@app.route("/demo/<bot_id>")
+def demo(bot_id):
+    """Serve a bot's demo page (local dev only)."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return {"error": "not available"}, 404
+    demo_dir = os.path.join("scripts", "bots", bot_id)
+    return flask.send_from_directory(demo_dir, "demo.html")
+
+
+@app.route("/demo/<bot_id>/<path:filename>")
+def demo_static(bot_id, filename):
+    """Serve static assets for a bot's demo page."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return {"error": "not available"}, 404
+    demo_dir = os.path.join("scripts", "bots", bot_id)
+    return flask.send_from_directory(demo_dir, filename)
+
+
+@app.route("/bot_scripts/<path:filename>")
+def bot_scripts(filename):
+    """Serve shared bot scripts."""
+    if os.getenv("APP_ENV", "local") == "production":
+        return {"error": "not available"}, 404
+    return flask.send_from_directory("app/bot_scripts", filename)
+
+
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "service": "bot-factory"}
-
-
-@app.route("/visit", methods=["POST"])
-def visit():
-    body = request.get_json() or {}
-    bot_id = body.get("bot_id", "unknown")
-    user_agent = request.headers.get("User-Agent", "")
-    referrer = request.headers.get("Referer", "")
-    log_visit(bot_id, user_agent=user_agent, referrer=referrer)
-    return {"status": "ok"}
 
 
 @app.route("/chat", methods=["POST"])
@@ -121,7 +138,8 @@ def chat():
                 yield f"data: {json.dumps({'token': token})}\n\n"
 
             # Log the interaction
-            log_chat_interaction(bot_id, message, "".join(full_response), sources)
+            client_ip = request.headers.get("X-Forwarded-For", request.remote_addr) or ""
+            log_chat_interaction(bot_id, message, "".join(full_response), sources, client_ip=client_ip)
 
             # Invoke self-heal BEFORE [DONE] — all tokens are already streamed,
             # but Lambda can freeze the container after [DONE] so we must fire first.

@@ -30,7 +30,7 @@ def load_bot_config(bot_id: str) -> dict:
     return yaml.safe_load(obj["Body"].read().decode("utf-8"))
 
 
-def log_chat_interaction(bot_id: str, question: str, response: str, sources: list[dict]):
+def log_chat_interaction(bot_id: str, question: str, response: str, sources: list[dict], client_ip: str = ""):
     """Log chat interaction to DynamoDB BotFactoryLogs table."""
     try:
         from .retrieval import get_dynamodb_connection
@@ -55,29 +55,8 @@ def log_chat_interaction(bot_id: str, question: str, response: str, sources: lis
                 "response": response,
                 "sources": clean_sources,
                 "source_count": len(sources),
+                **({"client_ip": client_ip} if client_ip else {}),
             }
         )
     except Exception as e:
         logger.warning(f"Failed to log chat interaction for '{bot_id}': {e}")
-
-
-def log_visit(bot_id: str, user_agent: str = "", referrer: str = ""):
-    """Log a site visit to DynamoDB BotFactoryLogs table."""
-    try:
-        from .retrieval import get_dynamodb_connection
-
-        dynamodb = get_dynamodb_connection()
-        table = dynamodb.Table(LOGS_TABLE_NAME)
-
-        table.put_item(
-            Item={
-                "id": f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}",
-                "bot_id": bot_id,
-                "type": "visit",
-                "timestamp": datetime.utcnow().isoformat(),
-                "user_agent": user_agent,
-                "referrer": referrer,
-            }
-        )
-    except Exception as e:
-        logger.warning(f"Failed to log visit for '{bot_id}': {e}")

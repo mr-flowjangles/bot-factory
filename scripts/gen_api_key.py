@@ -62,6 +62,8 @@ def gen_key(bot_id: str, name: str, endpoint_url: str = None, table_name: str = 
         if re.search(rf"^{bot_env_key}=.*$", env_text, re.MULTILINE):
             env_text = re.sub(rf"^{bot_env_key}=.*$", f"{bot_env_key}={api_key}", env_text, flags=re.MULTILINE)
         else:
+            if env_text and not env_text.endswith("\n"):
+                env_text += "\n"
             env_text += f"{bot_env_key}={api_key}\n"
 
         env_path.write_text(env_text)

@@ -125,39 +125,38 @@ Only say you can't answer if the context has nothing relevant."""
 def _build_enriched_query(user_message: str, conversation_history: list[dict]) -> str:
     """Build a context-enriched query for better RAG retrieval on follow-ups.
 
-    Uses the last exchange (user + assistant) to ground vague follow-ups like
-    'what other chords are around there?' in the specific topic being discussed.
-    Assistant text is truncated before tab diagrams to keep the embedding focused.
+    Strategy: try the user's new question first. Only enrich with conversation
+    history if the question looks like a vague follow-up that can't stand alone
+    (e.g., "tell me more", "what about that", "any others?").
     """
     if not conversation_history:
         return user_message
 
-    # Get the last user message and last assistant message
+    # If the message looks like a standalone question, use it as-is.
+    # Vague follow-ups are short and lack a clear topic noun.
+    msg_lower = user_message.lower().strip()
+    words = msg_lower.split()
+
+    # Short messages with follow-up signals need context
+    follow_up_signals = (
+        "more", "else", "other", "another", "that", "those", "this", "these",
+        "it", "them", "there", "about it", "like that", "similar",
+    )
+    is_vague = len(words) <= 5 and any(signal in msg_lower for signal in follow_up_signals)
+
+    if not is_vague:
+        return user_message
+
+    # Enrich with last user message only (not assistant text — it dominates the embedding)
     last_user = None
-    last_assistant = None
     for msg in reversed(conversation_history):
-        if msg["role"] == "assistant" and last_assistant is None:
-            # Truncate at tab diagrams (lines with e|, B|, etc.) to remove noise
-            text = msg["content"]
-            for marker in ["\ne|", "\nB|", "\ne |", "\nB |"]:
-                idx = text.find(marker)
-                if idx > 0:
-                    text = text[:idx]
-                    break
-            last_assistant = text[:200].strip()
-        elif msg["role"] == "user" and last_user is None:
+        if msg["role"] == "user":
             last_user = msg["content"][:150].strip()
-        if last_user and last_assistant:
             break
 
-    parts = []
     if last_user:
-        parts.append(last_user)
-    if last_assistant:
-        parts.append(last_assistant)
-    parts.append(user_message)
-
-    return " | ".join(parts)
+        return f"{last_user} | {user_message}"
+    return user_message
 
 
 def generate_response(

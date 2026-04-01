@@ -58,3 +58,8 @@ AWSCLIV2.pkg
 
 #Claude
 CLAUDE_HELP
+
+# Demo pages (contain company-specific content)
+scripts/bots/*/demo.html
+scripts/bots/*/demo-bg.png
+scripts/bots/*/data/*.pdf
