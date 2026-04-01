@@ -191,12 +191,11 @@ local-stop:
 
 test-chat:
 	@test -n "$(BOT)" || (echo "Usage: make test-chat BOT={bot_id}" && exit 1)
-	@set -a && source .env && set +a && python3 -c "import json; from factory.lambda_handler import lambda_handler; \
-	result = lambda_handler({ \
-		'rawPath': '/chat', \
-		'requestContext': {'http': {'method': 'POST'}}, \
-		'body': json.dumps({'bot_id': '$(BOT)', 'message': '$(or $(MSG),hi)'}) \
-	}, None); print(json.dumps(json.loads(result['body']), indent=2))"
+	@set -a && source .env && set +a && \
+	curl -N -s -X POST http://localhost:8001/chat \
+	  -H "Content-Type: application/json" \
+	  -H "X-API-Key: $$API_KEY" \
+	  -d '{"bot_id": "$(BOT)", "message": "$(or $(MSG),hi)"}'
 
 test:
 	python3 -m pytest tests/ -v

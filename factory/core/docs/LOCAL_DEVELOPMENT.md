@@ -44,7 +44,7 @@ Replace `{bot_id}` with `RobbAI`, `the-fret-detective`, or whatever bot you're w
 ## Testing the Chatbot Locally
 
 ```bash
-# Send a test message via the Makefile (calls lambda_handler directly)
+# Send a test message via the Makefile (curls the dev server)
 make test-chat BOT=RobbAI MSG="What does Rob do?"
 
 # Or hit the Flask dev server streaming endpoint

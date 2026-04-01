@@ -56,8 +56,8 @@ Local development uses Docker Compose (nginx + LocalStack) and a Flask dev serve
 │   └── init-dynamodb.sh       ← Create DynamoDB tables in LocalStack
 │
 ├── Versions/                  ← Release notes + enhancement docs per version
-│   ├── v1.0.0/
-│   ├── v2.0.0/
+│   ├── v1/v1.0.0/
+│   ├── v2/v2.0.0/
 │   └── ...
 │
 ├── terraform/                 ← Infrastructure as code (S3, DynamoDB, IAM, Lambda)
