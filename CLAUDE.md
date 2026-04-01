@@ -21,7 +21,7 @@ make format                      # black (line-length=120)
 make format-check                # Check formatting without applying
 
 # Testing (manual — no automated test suite)
-make test-chat BOT={bot_id} MSG="your question"   # Invoke lambda_handler directly
+make test-chat BOT={bot_id} MSG="your question"   # Curl the dev server (must be running)
 
 # Bot data management
 make load-bot bot={bot_id}       # Sync bot data/ to LocalStack S3
@@ -41,9 +41,9 @@ make scaffold bot={bot_id}       # Create new bot skeleton
 Browser → nginx (localhost:8080)
                 ↓
        ┌────────┴────────┐
-       │ Buffered         │ Streaming
-       │ lambda_handler   │ streaming_handler / dev_server.py (Flask SSE)
-       └────────┬────────┘
+       │ Streaming
+       │ streaming_handler / dev_server.py (Flask SSE)
+       └────────┬
                 ↓
          factory/core/chatbot.py  ← orchestrator
                 ↓
@@ -60,8 +60,7 @@ Browser → nginx (localhost:8080)
 
 **Key data flow:** User message → Titan V2 embedding → cosine similarity against DynamoDB embeddings → top_k chunks → Claude generates response with retrieved context.
 
-**Two Lambda handlers:**
-- `factory/lambda_handler.py` — Buffered responses via API Gateway
+**Lambda handler:**
 - `factory/streaming_handler.py` — SSE streaming via Lambda Function URL
 
 **Local dev uses:**
@@ -114,6 +113,8 @@ Release notes and enhancement docs live in `Versions/v{major}/v{major}.{minor}.{
 - **v2.0.6 — Performance Tuning** — Embedding cache in Lambda memory (eliminates 1.7s DynamoDB scan). System prompt cachePoint restored. Observability timing breakdowns in CloudWatch.
 - **v2.0.7 — Debug Timing Guard** — Gated all timing prints behind `DEBUG_TIMING` env var. Toggleable from Lambda console without redeploying.
 - **v2.1.0 — Cost Optimization + Content Expansion** — Server-side conversation history cap (6 messages). Input lock during streaming + character-by-character rendering. Complete scale boxes (minor/major pentatonic, blues) and all 7 modes with tab patterns.
+- **v2.2.0 — PDF Ingestion** — PDF ingestion pipeline for bot knowledge bases.
+- **v2.2.1 — Documentation Cleanup** — Removed stale lambda_handler references. Fixed `make test-chat` to curl dev server. Fixed Versions/ tree in README.
 
 ## Production Deployment Notes
 

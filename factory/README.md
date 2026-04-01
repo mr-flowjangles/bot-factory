@@ -281,7 +281,7 @@ If your bot has many similar entries (like The Fret Detective's chord voicings a
 | Deploy config+prompt (local) | `make deploy-bot bot={id}` | Upload config+prompt to LocalStack S3 |
 | Generate embeddings (local) | `make embed bot={id}` | Reads LocalStack S3, writes LocalStack DynamoDB |
 | Generate API key (local) | `make gen-key bot={id} name=dev-local` | Scoped to bot, writes to .env |
-| Send test message | `make test-chat BOT={id} MSG="..."` | Calls lambda_handler directly |
+| Send test message | `make test-chat BOT={id} MSG="..."` | Curls the dev server (must be running) |
 | Deploy infra (prod) | `make deploy-infra` | Terraform deploy |
 | Deploy streaming (prod) | `make deploy-streaming` | Streaming Lambda + Function URL |
 | Deploy bot (prod) | `make deploy-bot-prod bot={id}` | Upload to prod S3 + generate prod embeddings |
