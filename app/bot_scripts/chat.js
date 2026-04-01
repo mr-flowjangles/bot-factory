@@ -173,14 +173,7 @@ async function sendMessage() {
         typingRemoved = true;
       }
 
-      // Drip one character at a time for smooth rendering
-      const next = tokenQueue[0];
-      fullResponse += next.charAt(0);
-      if (next.length > 1) {
-        tokenQueue[0] = next.slice(1);
-      } else {
-        tokenQueue.shift();
-      }
+      fullResponse += tokenQueue.shift();
 
       while (div.childNodes.length > 1) {
         div.removeChild(div.lastChild);
@@ -189,7 +182,7 @@ async function sendMessage() {
       formatter(fullResponse, div);
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
-      setTimeout(renderNext, 50);
+      setTimeout(renderNext, 30);
     }
 
     while (true) {

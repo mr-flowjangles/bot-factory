@@ -99,8 +99,12 @@ Each bot lives in `scripts/bots/{bot_id}/` with three components:
 
 ## Versions
 
-Release notes and enhancement docs live in `Versions/v{version}/`:
+Release notes and enhancement docs live in `Versions/v{major}/v{major}.{minor}.{patch}/`:
+
+### v1
 - **v1.0.0 — Bot Factory Platform** — Foundation: serverless RAG chatbot platform on AWS.
+
+### v2
 - **v2.0.0 — Self-Healing Knowledge Base** — Background agent generates knowledge from unanswered questions. Config-driven (`bot.agentic.self_heal`).
 - **v2.0.1 — Production Self-Heal + Chat UX** — Self-heal moved to dedicated async Lambda. Cached boto3 client. Chat UX polish.
 - **v2.0.2 — Embedding Context + Search Term Enrichment** — Config-driven `embedding_context` for domain abbreviations. Coverage: 99.3% pass rate.

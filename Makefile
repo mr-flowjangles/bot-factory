@@ -7,7 +7,8 @@
         init local local-stop test-chat help \
         setup-bot setup-bot-prod \
         sync-data new-version \
-        manifest manifest-prod
+        manifest manifest-prod \
+        ingest-pdf
 
 # ─────────────────────────────────────────────────────────────
 # Config
@@ -80,6 +81,7 @@ help:
 	@printf "  %-38s %s\n" "load-bot bot={bot_id}"        "Sync scripts/bots/{bot_id}/data/ to S3"
 	@printf "  %-38s %s\n" "deploy-bot bot={bot_id}"      "Upload config.yml + prompt.yml to S3 (local)"
 	@printf "  %-38s %s\n" "sync-data [bot={bot_id}]"     "Pull new data files from prod S3 to local"
+	@printf "  %-38s %s\n" "ingest-pdf bot={id} pdf={path}" "Ingest a PDF into bot knowledge base"
 	@echo ""
 	@echo "  Embeddings"
 	@echo "  ──────────────────────────────────────────────────────────"
@@ -364,6 +366,11 @@ ifdef bot
 else
 	bash scripts/sync_s3_data.sh
 endif
+
+ingest-pdf:
+	@test -n "$(bot)" || (echo "Usage: make ingest-pdf bot={bot_id} pdf={path}" && exit 1)
+	@test -n "$(pdf)" || (echo "Usage: make ingest-pdf bot={bot_id} pdf={path}" && exit 1)
+	python3 scripts/pdf_ingest.py $(bot) $(pdf)
 
 # ─────────────────────────────────────────────────────────────
 # Embeddings
