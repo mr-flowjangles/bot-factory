@@ -70,6 +70,7 @@ if [[ "$DROP_TABLES" == "true" ]]; then
     drop_table BotFactoryHistory
     drop_table BotFactoryLogs
     drop_table BotFactoryApiKeys
+    drop_table BotFactoryRateLimit
     echo ""
 fi
 
@@ -97,13 +98,24 @@ create_table BotFactoryApiKeys \
     --key-schema AttributeName=api_key,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST
 
+create_table BotFactoryRateLimit \
+    --attribute-definitions AttributeName=pk,AttributeType=S \
+    --key-schema AttributeName=pk,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST
+
+# Enable TTL on the rate-limit table. LocalStack ignores it gracefully; in AWS it's required.
+aws dynamodb update-time-to-live \
+    --table-name BotFactoryRateLimit \
+    --time-to-live-specification 'Enabled=true,AttributeName=expires_at' \
+    --region "$REGION" $AWS_ARGS >/dev/null 2>&1 || echo "  - TTL update skipped (already set or unsupported)"
+
 # ── Verify ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "═══ Verifying tables ═══"
 TABLES=$(aws dynamodb list-tables --region "$REGION" $AWS_ARGS --query 'TableNames' --output text)
 echo "Tables: $TABLES"
 
-for required in BotFactoryRAG BotFactoryHistory BotFactoryLogs BotFactoryApiKeys; do
+for required in BotFactoryRAG BotFactoryHistory BotFactoryLogs BotFactoryApiKeys BotFactoryRateLimit; do
     if echo "$TABLES" | grep -q "$required"; then
         echo "  ✓ $required exists"
     else

@@ -32,3 +32,20 @@ variable "dynamo_api_keys_table_name" {
   type        = string
   default     = "BotFactoryApiKeys"
 }
+
+variable "dynamo_rate_limit_table_name" {
+  description = "DynamoDB table for per-key/per-IP rate limit counters"
+  type        = string
+  default     = "BotFactoryRateLimit"
+}
+
+variable "budget_notification_email" {
+  description = "Email address for Bedrock budget alarm notifications"
+  type        = string
+}
+
+variable "bedrock_monthly_budget_usd" {
+  description = "Monthly Bedrock spend cap (USD) before the 80%/100% alarms fire"
+  type        = number
+  default     = 20
+}

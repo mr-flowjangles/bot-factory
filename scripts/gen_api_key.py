@@ -32,7 +32,14 @@ def get_dynamodb_table(table_name: str, endpoint_url: str = None):
     return dynamodb.Table(table_name)
 
 
-def gen_key(bot_id: str, name: str, endpoint_url: str = None, table_name: str = "BotFactoryApiKeys"):
+def gen_key(
+    bot_id: str,
+    name: str,
+    allowed_origins: list[str],
+    rate_limit_per_hour: int,
+    endpoint_url: str = None,
+    table_name: str = "BotFactoryApiKeys",
+):
     api_key = f"bfk_{secrets.token_urlsafe(32)}"
 
     table = get_dynamodb_table(table_name, endpoint_url)
@@ -41,15 +48,19 @@ def gen_key(bot_id: str, name: str, endpoint_url: str = None, table_name: str = 
         "bot_id": bot_id,
         "name": name,
         "enabled": True,
+        "allowed_origins": allowed_origins,
+        "rate_limit_per_hour": rate_limit_per_hour,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    print(f"\n  API key generated for bot '{bot_id}'")
-    print(f"  Name:    {name}")
-    print(f"  Key:     {api_key}")
-    print(f"  Table:   {table_name}")
-    print(f"\n  Use this header in requests:")
-    print(f"  X-API-Key: {api_key}")
+    print(f"\n  Publishable key generated for bot '{bot_id}'")
+    print(f"  Name:           {name}")
+    print(f"  Key:            {api_key}")
+    print(f"  Table:          {table_name}")
+    print(f"  Allowed origins: {allowed_origins}")
+    print(f"  Rate limit:     {rate_limit_per_hour}/hr per IP")
+    print(f"\n  Use this header in requests (X-API-Key also accepted for legacy clients):")
+    print(f"  X-Publishable-Key: {api_key}")
 
     # Update .env with bot-specific key
     env_path = Path(".env")
@@ -74,9 +85,20 @@ def gen_key(bot_id: str, name: str, endpoint_url: str = None, table_name: str = 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate an API key for a Bot Factory bot")
+    parser = argparse.ArgumentParser(description="Generate a publishable key for a Bot Factory bot")
     parser.add_argument("bot_id", help="Bot identifier (e.g. 'guitar')")
     parser.add_argument("--name", required=True, help="Key label (e.g. 'dev-local', 'prod-site')")
+    parser.add_argument(
+        "--allowed-origins",
+        required=True,
+        help="Comma-separated allowlist of browser Origins (e.g. 'https://robrose.info,http://localhost:8080')",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=30,
+        help="Max requests per hour per IP (default: 30)",
+    )
     parser.add_argument("--endpoint-url", default=None, help="LocalStack endpoint")
     parser.add_argument("--table", default="BotFactoryApiKeys", help="DynamoDB table name")
 
@@ -86,4 +108,9 @@ if __name__ == "__main__":
         print("bot_id must be alphanumeric with optional hyphens")
         sys.exit(1)
 
-    gen_key(args.bot_id, args.name, args.endpoint_url, args.table)
+    origins = [o.strip() for o in args.allowed_origins.split(",") if o.strip()]
+    if not origins:
+        print("--allowed-origins must contain at least one origin")
+        sys.exit(1)
+
+    gen_key(args.bot_id, args.name, origins, args.rate_limit, args.endpoint_url, args.table)

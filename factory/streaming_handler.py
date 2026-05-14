@@ -66,13 +66,32 @@ def handler(event, *args):
         response_stream.close()
         return
 
-    # Auth check
+    # Auth + origin enforcement
     headers = event.get("headers", {})
-    api_key = headers.get("x-api-key", "")
-    from factory.core.auth import validate_api_key
+    # Lambda lowercases header names. Accept either name.
+    api_key = headers.get("x-publishable-key") or headers.get("x-api-key") or ""
+    origin = headers.get("origin", "")
 
-    if not validate_api_key(api_key, bot_id):
-        response_stream.write(b'data: {"error":"unauthorized"}\n\n')
+    from factory.core.auth import authorize_request
+    from factory.core.rate_limit import check_rate_limit
+
+    allowed, reason, key_record = authorize_request(api_key, bot_id, origin)
+    if not allowed:
+        response_stream.write(f'data: {{"error":"unauthorized: {reason}"}}\n\n'.encode())
+        response_stream.close()
+        return
+
+    # Rate limit per (key, IP)
+    request_context = event.get("requestContext", {})
+    client_ip = (
+        headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or request_context.get("http", {}).get("sourceIp", "")
+    )
+    rate_limit = key_record.get("rate_limit_per_hour")
+    allowed, count = check_rate_limit(api_key, client_ip, rate_limit)
+    if not allowed:
+        logger.warning(f"[rate_limit] blocked bot_id={bot_id} ip={client_ip} count={count}")
+        response_stream.write(b'data: {"error":"rate limit exceeded"}\n\n')
         response_stream.close()
         return
 

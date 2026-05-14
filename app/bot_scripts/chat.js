@@ -8,7 +8,7 @@
  *   window.BOT_CONFIG = {
  *     apiUrl: 'https://xxx.lambda-url.us-east-1.on.aws',
  *     botId: 'the-fret-detective',
- *     apiKey: 'bfk_...',
+ *     publishableKey: 'bfk_...',  // (alias: apiKey, for backwards compat)
  *     botName: 'The Fret Detective',
  *     placeholder: 'Ask about guitar...'
  *   };
@@ -25,10 +25,11 @@ const chatSuggestions = document.getElementById("chatSuggestions");
 const config = window.BOT_CONFIG || {
   apiUrl: "",
   botId: "",
-  apiKey: "",
+  publishableKey: "",
   botName: "Bot",
   placeholder: "Type a message...",
 };
+const publishableKey = config.publishableKey || config.apiKey || "";
 
 // Conversation history — persists for the browser session.
 const conversationHistory = [];
@@ -135,7 +136,7 @@ async function sendMessage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": config.apiKey,
+        "X-Publishable-Key": publishableKey,
       },
       body: JSON.stringify({
         bot_id: config.botId,

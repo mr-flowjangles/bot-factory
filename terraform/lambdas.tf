@@ -30,6 +30,7 @@ resource "aws_lambda_function" "api" {
       RAG_TABLE_NAME         = aws_dynamodb_table.rag.name
       LOGS_TABLE_NAME        = aws_dynamodb_table.logs.name
       API_KEYS_TABLE_NAME    = aws_dynamodb_table.api_keys.name
+      RATE_LIMIT_TABLE_NAME  = aws_dynamodb_table.rate_limit.name
       RAG_BOT_ID_INDEX_NAME  = "bot_id-index"
       APP_ENV                = "production"
     }
@@ -78,6 +79,7 @@ resource "aws_lambda_function" "streaming" {
       RAG_TABLE_NAME          = aws_dynamodb_table.rag.name
       LOGS_TABLE_NAME         = aws_dynamodb_table.logs.name
       API_KEYS_TABLE_NAME     = aws_dynamodb_table.api_keys.name
+      RATE_LIMIT_TABLE_NAME   = aws_dynamodb_table.rate_limit.name
       RAG_BOT_ID_INDEX_NAME   = "bot_id-index"
       APP_ENV                 = "production"
       SELF_HEAL_FUNCTION_NAME = aws_lambda_function.self_heal.function_name
