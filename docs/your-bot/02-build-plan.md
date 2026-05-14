@@ -10,7 +10,7 @@ Three milestones, smallest-first. M0 makes Rob faster. M1 makes Rob discoverable
 
 Goal: cut Rob's per-customer onboarding from "a day of clicking" to "30 minutes of script". Pure internal tooling. Customer never sees any of this.
 
-- [ ] **Repeatable onboarding script** — `scripts/onboard_customer.sh` that takes `--bot-id`, `--customer-name`, `--allowed-origins`, `--data-dir`. Runs: scaffold → sync data → embed → gen publishable key → deploy. End state: one command per new customer.
+- [x] **Repeatable onboarding script** — `scripts/onboard_customer.sh` takes `--bot-id`, `--customer-name`, `--allowed-origins`, `--brief-dir`. Runs scaffold → import brief (config + prompt + data) → `make deploy-bot-prod` → `gen_api_key.py`. Prints an onboarding receipt with the embed snippet. Shipped in v2.4.1.
 - [ ] **Weekly activity email** — new Lambda on a CloudWatch schedule. Reads `BotFactoryLogs`, groups by bot_id over the last 7 days, sends one email per customer via SES with: total messages, top 10 topics, top 5 unanswered questions, week-over-week delta. Subscriber email lives on the bot's config.
 - [ ] **Decommission workflow** — `scripts/offboard_customer.sh`: disable keys (`enabled=false`), export their data to a tarball, optionally delete their embeddings + logs. For churn or contract end.
 - [ ] **Fix the `make deploy-streaming` Makefile bug** (carried over from v2.3.0). It builds the wrong zip. Either delete the target or repoint it at `build_lambda.sh`.
@@ -29,6 +29,7 @@ Goal: a website that a stranger could land on and understand what Rob sells in 3
   - [ ] FAQ — "is my data private?", "what if my bot is wrong?", "what does the weekly report look like?"
   - [ ] Contact form — name, email, business, what would the bot do? (reuse the FastAPI contact endpoint pattern from aws-serverless-resume)
 - [ ] **Deploy landing page** — own serverless stack (Lambda + CloudFront + S3 + Terraform). Could literally fork aws-serverless-resume.
+- [ ] **One-line embed distribution** — host `embed.js` on the Your Bot CDN (CloudFront in front of S3). Customer pastes a single `<script src="https://yourbot.dev/embed.js?k=bfk_...">` line; the script reads its own `?k=` param, calls a new `GET /config?key=bfk_...` endpoint on bot-factory (auth: same origin allowlist + key check as `/chat`) to fetch the customer-public subset of `config.yml` (bot name, placeholder, suggested questions, colors — **not** the system prompt, model, or RAG params), then mounts the widget. End state: the `<chat.js host TBD>` placeholder in `onboard_customer.sh`'s receipt resolves to the real one-liner.
 - [ ] **SOW / contract template** — lawyer-reviewed one-pager. Scope, payment terms, IP ownership (customer owns their content + bot output; Rob owns the platform), support level, cancellation, data-deletion rights.
 - [ ] **Stripe Invoicing account** — connect to Rob's business entity. Create invoice templates for setup fee and monthly retainer.
 - [ ] **Privacy policy + terms of service** — generated from a template (Termly, Iubenda). Linked from landing page.
