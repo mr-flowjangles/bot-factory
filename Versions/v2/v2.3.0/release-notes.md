@@ -53,12 +53,16 @@ Treat `bfk_` keys as **publishable identifiers**, not secrets, and enforce three
 
 This is a hard cutover. Existing keys must be backfilled with `allowed_origins` and `rate_limit_per_hour` **before** the new code is deployed, or live bots will break.
 
-1. Set the `budget_notification_email` tfvar.
+1. Confirm `budget_notification_email` is set in `terraform/terraform.tfvars`.
 2. `terraform apply` to create `BotFactoryRateLimit` and the budget alarm. (Safe — new resources only.)
-3. Backfill production keys:
+3. Backfill all three live keys:
    ```bash
-   python3 scripts/migrate_keys_v2_3_0.py --bot-id RobbAI --origins https://robrose.info --rate-limit 30
-   python3 scripts/migrate_keys_v2_3_0.py --bot-id the-fret-detective --origins https://thefretdetective.com --rate-limit 30
+   python3 scripts/migrate_keys_v2_3_0.py --bot-id RobbAI \
+     --origins https://robrose.info,http://localhost:8080 --rate-limit 30
+   python3 scripts/migrate_keys_v2_3_0.py --bot-id the-fret-detective \
+     --origins https://thefretdetective.com,http://localhost:8080 --rate-limit 30
+   python3 scripts/migrate_keys_v2_3_0.py --bot-id bellese-atlas \
+     --origins http://localhost:8080 --rate-limit 30
    ```
 4. `make deploy-streaming` to roll out the new code.
-5. Smoke-test both live bots.
+5. Smoke-test all three bots from their respective origins.
