@@ -122,6 +122,30 @@ resource "aws_dynamodb_table" "api_keys" {
 }
 
 # ─────────────────────────────────────────────────────────────
+# DynamoDB — Rate limit counters (TTL-managed)
+# pk = "{api_key}#{ip}", expires_at = epoch seconds
+# ─────────────────────────────────────────────────────────────
+resource "aws_dynamodb_table" "rate_limit" {
+  name         = var.dynamo_rate_limit_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  tags = {
+    Project = "bot-factory"
+  }
+}
+
+# ─────────────────────────────────────────────────────────────
 # IAM — Lambda execution role
 # ─────────────────────────────────────────────────────────────
 resource "aws_iam_role" "lambda_exec" {
@@ -184,7 +208,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "${aws_dynamodb_table.rag.arn}/index/*",
           aws_dynamodb_table.history.arn,
           aws_dynamodb_table.logs.arn,
-          aws_dynamodb_table.api_keys.arn
+          aws_dynamodb_table.api_keys.arn,
+          aws_dynamodb_table.rate_limit.arn
         ]
       },
       {

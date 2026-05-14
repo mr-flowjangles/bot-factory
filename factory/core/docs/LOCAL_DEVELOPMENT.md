@@ -50,7 +50,8 @@ make test-chat BOT=RobbAI MSG="What does Rob do?"
 # Or hit the Flask dev server streaming endpoint
 curl -N -X POST http://localhost:8001/chat \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: your_key_here" \
+  -H "X-Publishable-Key: your_key_here" \
+  -H "Origin: http://localhost:8080" \
   -d '{"bot_id": "RobbAI", "message": "What does Rob do?"}'
 ```
 

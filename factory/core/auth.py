@@ -1,8 +1,11 @@
 """
 API Key Authentication
 
-Validates X-API-Key headers against the BotFactoryApiKeys DynamoDB table.
-Keys are scoped to a bot_id. Validated keys are cached in-memory for warm Lambda reuse.
+Validates publishable keys (X-Publishable-Key, also accepted as X-API-Key) against the
+BotFactoryApiKeys DynamoDB table. Keys are scoped to a bot_id and carry an `allowed_origins`
+list — hard-enforced. Keys without `allowed_origins` are rejected.
+
+Validated lookups are cached in-memory for warm Lambda reuse.
 """
 
 import os
@@ -13,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 API_KEYS_TABLE_NAME = os.getenv("API_KEYS_TABLE_NAME", "BotFactoryApiKeys")
 
-# In-memory cache: api_key -> bot_id (survives warm Lambda invocations)
-_key_cache: dict[str, str] = {}
+# In-memory cache: api_key -> record dict (survives warm Lambda invocations)
+_key_cache: dict[str, dict] = {}
 
 
 def _get_dynamodb_table():
@@ -31,35 +34,50 @@ def _get_dynamodb_table():
     return dynamodb.Table(API_KEYS_TABLE_NAME)
 
 
-def validate_api_key(api_key: str, bot_id: str) -> bool:
-    """Check if api_key is valid for the given bot_id. Returns True/False."""
+def lookup_api_key(api_key: str) -> dict | None:
+    """Return the full key record (bot_id, allowed_origins, rate_limit_per_hour, ...) or None."""
     if not api_key:
-        return False
+        return None
 
-    # Check in-memory cache first
-    cached_bot = _key_cache.get(api_key)
-    if cached_bot is not None:
-        return cached_bot == bot_id
+    cached = _key_cache.get(api_key)
+    if cached is not None:
+        return cached
 
-    # Look up in DynamoDB
     try:
         table = _get_dynamodb_table()
         result = table.get_item(Key={"api_key": api_key})
         item = result.get("Item")
-
         if not item:
-            logger.warning(f"[auth] invalid key for bot_id={bot_id}")
-            return False
-
+            return None
         if not item.get("enabled", True):
-            logger.warning(f"[auth] disabled key for bot_id={bot_id}")
-            return False
-
-        key_bot_id = item.get("bot_id")
-        # Cache the result
-        _key_cache[api_key] = key_bot_id
-        return key_bot_id == bot_id
-
+            logger.warning("[auth] disabled key presented")
+            return None
+        _key_cache[api_key] = item
+        return item
     except Exception as e:
         logger.error(f"[auth] DynamoDB lookup failed: {e}")
-        return False
+        return None
+
+
+def authorize_request(api_key: str, bot_id: str, origin: str) -> tuple[bool, str, dict | None]:
+    """
+    Hard-enforce three checks: key valid, bot_id matches, origin in allowlist.
+    Returns (allowed, reason_if_rejected, key_record_if_allowed).
+    """
+    record = lookup_api_key(api_key)
+    if record is None:
+        return (False, "invalid or disabled key", None)
+
+    if record.get("bot_id") != bot_id:
+        return (False, "key not authorized for this bot", None)
+
+    allowed_origins = record.get("allowed_origins") or []
+    if not allowed_origins:
+        logger.warning(f"[auth] key for bot_id={bot_id} has no allowed_origins — rejecting")
+        return (False, "key has no configured origins", None)
+
+    if origin not in allowed_origins:
+        logger.warning(f"[auth] origin={origin!r} not in allowlist for bot_id={bot_id}")
+        return (False, "origin not allowed", None)
+
+    return (True, "", record)

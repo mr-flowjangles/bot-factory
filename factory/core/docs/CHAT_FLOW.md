@@ -16,7 +16,17 @@ Request body:
 }
 ```
 
-Header: `X-API-Key: bfk_...`
+Header: `X-Publishable-Key: bfk_...` (legacy `X-API-Key` also accepted)
+
+### Publishable keys (v2.3.0+)
+
+`bfk_` keys are **publishable identifiers**, like Stripe's `pk_` — they ship in browser code and aren't secret. Security comes from three checks, all hard-enforced server-side:
+
+1. **Bot scope** — each key is bound to one `bot_id` (`BotFactoryApiKeys.bot_id`). A key for `RobbAI` can't be used to talk to `the-fret-detective`.
+2. **Origin allowlist** — each key has an `allowed_origins` list. Requests whose `Origin` header isn't in that list are rejected. Keys with no `allowed_origins` are rejected — there is no permissive fallback.
+3. **Rate limit** — `rate_limit_per_hour` is enforced per (key, IP) via the `BotFactoryRateLimit` table (TTL-based sliding window). Default 30/hr if unset.
+
+Generate keys with `scripts/gen_api_key.py`; `--allowed-origins` is required.
 
 ---
 
@@ -29,7 +39,7 @@ Uses Lambda Response Streaming (invoked by a Lambda Function URL with `RESPONSE_
 AWS Lambda invokes this function with the HTTP event and a writable `response_stream` object.
 
 - Parses `bot_id` and `message` from the request body
-- Validates API key via `auth.validate_api_key()`
+- Validates key + bot scope + Origin via `auth.authorize_request()`, then per-IP rate limit via `rate_limit.check_rate_limit()`
 - Loads bot config via `bot_utils.load_bot_config(bot_id)` — reads `top_k` and `similarity_threshold` from `bot.rag`
 - Calls `generate_response_stream()` from `core/chatbot.py`
 
@@ -134,7 +144,8 @@ POST via Function URL (SSE)
         ▼
 streaming_handler.py
   handler()
-  │  validate_api_key() → DynamoDB BotFactoryApiKeys
+  │  authorize_request() → DynamoDB BotFactoryApiKeys (key + bot + origin)
+  │  check_rate_limit()  → DynamoDB BotFactoryRateLimit (per key+IP)
   │  load_bot_config() → S3 (top_k, similarity_threshold)
   │
   ▼

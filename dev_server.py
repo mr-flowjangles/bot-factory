@@ -17,7 +17,8 @@ from flask_cors import CORS
 from factory.core.chatbot import generate_response_stream
 from factory.core.retrieval import retrieve_relevant_chunks
 from factory.core.bot_utils import load_bot_config, log_chat_interaction
-from factory.core.auth import validate_api_key
+from factory.core.auth import authorize_request
+from factory.core.rate_limit import check_rate_limit
 from factory.core.self_heal import invoke_self_heal_async, get_pending_result
 
 logging.getLogger().setLevel(logging.INFO)
@@ -82,11 +83,25 @@ def chat():
             content_type="text/event-stream",
         )
 
-    api_key = request.headers.get("X-API-Key", "")
-    if not validate_api_key(api_key, bot_id):
+    api_key = request.headers.get("X-Publishable-Key") or request.headers.get("X-API-Key", "")
+    origin = request.headers.get("Origin", "")
+    allowed, reason, key_record = authorize_request(api_key, bot_id, origin)
+    if not allowed:
         return Response(
-            f'data: {json.dumps({"error": "unauthorized"})}\n\n',
+            f'data: {json.dumps({"error": f"unauthorized: {reason}"})}\n\n',
             status=401,
+            content_type="text/event-stream",
+        )
+
+    client_ip = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                 or request.remote_addr or "")
+    rate_limit = key_record.get("rate_limit_per_hour")
+    rl_allowed, rl_count = check_rate_limit(api_key, client_ip, rate_limit)
+    if not rl_allowed:
+        app.logger.warning(f"[rate_limit] blocked bot_id={bot_id} ip={client_ip} count={rl_count}")
+        return Response(
+            f'data: {json.dumps({"error": "rate limit exceeded"})}\n\n',
+            status=429,
             content_type="text/event-stream",
         )
 
