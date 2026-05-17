@@ -187,7 +187,7 @@ def generate_response(
 
     client = get_bedrock_client()
     response = client.converse(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        modelId="us.anthropic.claude-sonnet-4-6",
         inferenceConfig={"maxTokens": 1000},
         system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,
@@ -254,7 +254,7 @@ def generate_response_stream(
 
     client = get_bedrock_client()
     response = client.converse_stream(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        modelId="us.anthropic.claude-sonnet-4-6",
         inferenceConfig={"maxTokens": 1000},
         system=[{"text": system_prompt}, {"cachePoint": {"type": "default"}}],
         messages=messages,

@@ -42,7 +42,7 @@ CONFIG_TEMPLATE = """bot:
 
   model:
     provider: "bedrock"
-    name: "anthropic.claude-sonnet-4-20250514-v1:0"
+    name: "anthropic.claude-sonnet-4-6"
     max_tokens: 1024
 
   rag:

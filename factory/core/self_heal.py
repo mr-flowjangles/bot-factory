@@ -77,7 +77,7 @@ def _get_bedrock_client():
 
 
 MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-MODEL_SONNET = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_SONNET = "us.anthropic.claude-sonnet-4-6"
 
 
 def _llm_call(prompt: str, model: str = MODEL_SONNET, max_tokens: int = 2000) -> str:

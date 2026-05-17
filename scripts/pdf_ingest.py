@@ -144,7 +144,7 @@ def analyze_chunk(chunk: dict, chunk_num: int, total_chunks: int) -> str:
     print(f"  Processing chunk {chunk_num}/{total_chunks} (pages {chunk['start_page']}-{chunk['end_page']})...")
 
     response = client.converse(
-        modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        modelId="us.anthropic.claude-sonnet-4-6",
         inferenceConfig={"maxTokens": 4096},
         messages=[{"role": "user", "content": [{"text": prompt}]}],
     )
@@ -216,7 +216,7 @@ def enrich_search_terms(entries: list[dict]) -> list[dict]:
         print(f"  Enriching batch {batch_num}/{len(batches)} ({len(batch)} entries)...")
 
         response = client.converse(
-            modelId="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            modelId="us.anthropic.claude-sonnet-4-6",
             inferenceConfig={"maxTokens": 4096},
             messages=[{"role": "user", "content": [{"text": prompt}]}],
         )
